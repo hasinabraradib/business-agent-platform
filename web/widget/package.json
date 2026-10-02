@@ -1,0 +1,25 @@
+{
+  "name": "@business-agent-platform/widget",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Embeddable chat widget (one self-contained widget.js)",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "lint": "oxlint --deny-warnings src test build.mjs",
+    "test": "node --experimental-strip-types --no-warnings --test \"test/*.test.ts\"",
+    "build": "node --experimental-strip-types --no-warnings build.mjs",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "20.14.5",
+    "esbuild": "0.28.2",
+    "happy-dom": "20.14.5",
+    "oxlint": "1.86.0",
+    "typescript": "7.0.2"
+  }
+}

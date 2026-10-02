@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-console": [
+      "warn",
+      {
+        "allow": [
+          "warn"
+        ]
+      }
+    ],
+    "eqeqeq": "error",
+    "no-eval": "error",
+    "no-implied-eval": "error",
+    "no-script-url": "error",
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": [
+          "__bapWidget"
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "build.mjs"
+      ],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": [
+        "test/**"
+      ],
+      "rules": {
+        "no-script-url": "off"
+      }
+    }
+  ]
+}

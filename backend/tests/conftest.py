@@ -48,6 +48,8 @@ os.environ["STORAGE_DIR"] = tempfile.mkdtemp(prefix="bap-test-uploads-")
 # Tests never call a real AI API, even if .env has a key.
 os.environ["EMBEDDING_PROVIDER"] = "fake"
 os.environ["GEMINI_API_KEY"] = ""
+os.environ["CHAT_PROVIDER"] = "fake"
+os.environ["RERANKER"] = "noop"
 
 # ...or the network at all: only loopback hosts resolve (Postgres and Redis run locally).
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}

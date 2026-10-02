@@ -138,8 +138,8 @@ export class Widget {
 
     this.launcher.addEventListener("click", () => (this.isOpen ? this.close() : void this.open()));
     this.closeButton.addEventListener("click", () => this.close());
-    this.panel.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
+    this.root.addEventListener("keydown", (event) => {
+      if ((event as KeyboardEvent).key === "Escape" && this.isOpen) {
         event.preventDefault();
         this.close();
       }
@@ -227,7 +227,10 @@ export class Widget {
       button.type = "button";
       button.className = "suggestion";
       button.textContent = question;
-      button.addEventListener("click", () => void this.send(question));
+      button.addEventListener("click", () => {
+        void this.send(question);
+        this.keepFocus(); // the clicked suggestion is removed when the message is sent
+      });
       this.suggestions.appendChild(button);
     }
   }
@@ -284,7 +287,13 @@ export class Widget {
     node.appendChild(list);
   }
 
-  private scrollToEnd(): void {
+  /** If the focused control was removed, keep keyboard focus inside the panel. */
+  private keepFocus(): void {
+    const active = this.root.activeElement;
+    if (this.isOpen && (!active || !active.isConnected)) this.input.focus();
+  }
+
+    private scrollToEnd(): void {
     this.list.scrollTop = this.list.scrollHeight;
   }
 
@@ -322,6 +331,7 @@ export class Widget {
       }
       retry.addEventListener("click", () => {
         node.remove();
+        this.keepFocus();
         if (this.lastQuestion) void this.ask(this.lastQuestion);
       });
       node.appendChild(retry);

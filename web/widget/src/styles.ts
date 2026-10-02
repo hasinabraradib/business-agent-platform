@@ -44,7 +44,7 @@ transition:background var(--bap-motion-fast) var(--bap-motion-easing)}
 .icon-button svg{width:18px;height:18px}
 .messages{flex:1;overflow-y:auto;padding:var(--bap-space-xl);display:flex;flex-direction:column;
 gap:var(--bap-space-lg);overscroll-behavior:contain}
-.msg{display:flex;flex-direction:column;max-width:86%;animation:bap-in var(--bap-motion-base) var(--bap-motion-easing)}
+.msg{display:flex;flex-direction:column;min-width:0;max-width:86%;animation:bap-in var(--bap-motion-base) var(--bap-motion-easing)}
 .msg.user{align-self:flex-end;align-items:flex-end}
 .msg.assistant,.msg.error{align-self:flex-start;align-items:flex-start}
 .bubble{padding:var(--bap-space-md) var(--bap-space-lg);border-radius:var(--bap-radius-bubble);
@@ -54,12 +54,12 @@ white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:var(--bap-shadow-soft)}
 .bubble a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .cite{font-size:.72em;font-weight:700;margin-left:1px;opacity:.85}
 .meta{font-size:var(--bap-font-small);color:var(--bap-color-muted);margin-top:var(--bap-space-xs);padding:0 6px}
-.sources{display:flex;flex-wrap:wrap;gap:6px;margin:var(--bap-space-sm) 0 0;padding:0;list-style:none}
-.chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 12px 5px 9px;
+.sources{display:flex;flex-wrap:wrap;gap:6px;max-width:100%;margin:var(--bap-space-sm) 0 0;padding:0;list-style:none}
+.chip{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%;padding:5px 12px 5px 9px;
 border-radius:var(--bap-radius-pill);background:var(--bap-color-violet-soft);color:var(--bap-color-violet-ink);
 font-size:var(--bap-font-small);font-weight:550}
 .chip svg{width:13px;height:13px;flex:none}
-.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .typing{display:inline-flex;gap:5px;padding:var(--bap-space-md) var(--bap-space-lg)}
 .typing i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.45;
 animation:bap-dot 1.1s infinite var(--bap-motion-easing)}

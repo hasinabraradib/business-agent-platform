@@ -288,3 +288,30 @@ test("accessible structure: dialog, labelled controls, live region", async () =>
   assert.ok(root.querySelector('[aria-live="polite"][aria-atomic="true"]'));
   assert.ok(root.querySelector("style")?.textContent?.includes("prefers-reduced-motion"));
 });
+
+test("focus stays in the panel after a suggestion is used, so Escape still closes it", async () => {
+  const { widget, root } = mountWidget([{ sse: reply(["Menu reply"]) }]);
+  await widget.open();
+  const suggestion = root.querySelector(".suggestion") as HTMLButtonElement;
+  suggestion.focus();
+  suggestion.click();
+  await flush();
+  await flush();
+  assert.equal(root.querySelectorAll(".suggestion").length, 0);
+  assert.equal(root.activeElement, widget.input);
+  widget.input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }));
+  assert.equal(widget.isOpen, false);
+  assert.equal(root.activeElement, widget.launcher);
+});
+
+test("after retrying, focus moves to the input instead of being lost", async () => {
+  const { widget, root } = mountWidget([{ reject: true }, { sse: reply(["Back"]) }]);
+  await widget.open();
+  await widget.send("Hello?");
+  const retry = root.querySelector(".msg.error .retry") as HTMLButtonElement;
+  retry.focus();
+  retry.click();
+  await flush();
+  await flush();
+  assert.equal(root.activeElement, widget.input);
+});

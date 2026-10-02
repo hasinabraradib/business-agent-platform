@@ -1,6 +1,8 @@
 import asyncio
 import os
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import asyncpg
@@ -9,11 +11,14 @@ from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from alembic import command
 from app.config import Settings, get_settings
 from app.db_roles import ensure_app_role
+from app.models import Document
+from app.security import new_api_key
+from app.tenants import create_tenant
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -106,3 +111,34 @@ async def client(app) -> AsyncIterator[AsyncClient]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
     app.dependency_overrides.clear()
+
+
+@dataclass(frozen=True)
+class TenantFixture:
+    id: uuid.UUID
+    slug: str
+    admin_key: str
+    widget_key: str
+
+
+@pytest.fixture
+def make_tenant(owner_engine: AsyncEngine) -> Callable[..., Awaitable[TenantFixture]]:
+    """Create a tenant (as the owner role) with an admin key, a widget key and documents."""
+
+    async def _make(slug: str, documents: tuple[str, ...] = ()) -> TenantFixture:
+        async with AsyncSession(owner_engine, expire_on_commit=False) as session:
+            tenant, admin = await create_tenant(session, name=slug.title(), slug=slug)
+            widget = new_api_key(tenant.id, "widget", label="Website widget")
+            session.add(widget.record)
+            session.add_all(
+                Document(tenant_id=tenant.id, title=title, source_type="upload")
+                for title in documents
+            )
+            await session.commit()
+        return TenantFixture(tenant.id, slug, admin.full_key, widget.full_key)
+
+    return _make
+
+
+def bearer(key: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {key}"}

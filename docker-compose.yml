@@ -1,3 +1,12 @@
+# Settings shared by everything that runs the backend image as the application role.
+x-ingest-env: &ingest-env
+  DATABASE_URL: postgresql+asyncpg://bap_app:${APP_DB_PASSWORD:-bap_app}@postgres:5432/${POSTGRES_DB:-app}
+  REDIS_URL: redis://redis:6379/0
+  STORAGE_DIR: /data/uploads
+  EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-auto}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -31,29 +40,53 @@ services:
     build: ./backend
     command: sh -c "python -m app.cli ensure-app-role && alembic upgrade head"
     environment:
+      <<: *ingest-env
       OWNER_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-app}
-      DATABASE_URL: postgresql+asyncpg://bap_app:${APP_DB_PASSWORD:-bap_app}@postgres:5432/${POSTGRES_DB:-app}
+    volumes:
+      - uploads:/data/uploads
+      - ./demo:/demo:ro  # demo knowledge for `python -m app.cli seed-demo`
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   # The API holds only the app-role credentials, so Row-Level Security always applies to it.
   api:
     build: ./backend
     environment:
+      <<: *ingest-env
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATABASE_URL: postgresql+asyncpg://bap_app:${APP_DB_PASSWORD:-bap_app}@postgres:5432/${POSTGRES_DB:-app}
-      REDIS_URL: redis://redis:6379/0
     ports:
       - "${API_PORT:-8000}:8000"
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
       redis:
-        condition: service_started
+        condition: service_healthy
+
+  # Ingestion worker (arq on Redis). Also connects as the app role and binds each job's tenant.
+  worker:
+    build: ./backend
+    command: arq app.worker.WorkerSettings
+    environment:
+      <<: *ingest-env
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres-data:
+  uploads:

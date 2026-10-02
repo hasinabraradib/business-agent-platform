@@ -42,5 +42,15 @@ class DocumentOut(ORMModel):
     id: uuid.UUID
     title: str
     source_type: str
+    source_uri: str | None
     status: str
+    chunk_count: int
+    error: str | None
+    content_hash: str | None
     created_at: datetime
+    updated_at: datetime
+
+
+class DocumentFromURL(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+    title: str | None = Field(default=None, max_length=300)

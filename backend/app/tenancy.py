@@ -6,14 +6,34 @@ database is the second layer behind this one.
 """
 
 import uuid
+from collections.abc import AsyncIterator, Iterable
+from contextlib import asynccontextmanager
 from typing import Any, TypeVar
 
-from sqlalchemy import ColumnElement, Select, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import ColumnElement, Select, delete, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Tenant, TenantOwned
 
 T = TypeVar("T", bound=TenantOwned)
+
+
+async def bind_tenant(session: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Set app.current_tenant for the session's current transaction (RLS reads it)."""
+    await session.execute(
+        text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
+
+
+@asynccontextmanager
+async def tenant_db(
+    sessionmaker: async_sessionmaker[AsyncSession], tenant_id: uuid.UUID
+) -> AsyncIterator["TenantDB"]:
+    """A TenantDB on a fresh session, for code outside a request (worker, CLI)."""
+    async with sessionmaker() as session:
+        await bind_tenant(session, tenant_id)
+        yield TenantDB(session, tenant_id)
 
 
 class TenantDB:
@@ -31,8 +51,24 @@ class TenantDB:
         self._require_tenant_owned(model)
         return select(model).where(model.tenant_id == self.tenant_id)
 
-    async def get(self, model: type[T], id: uuid.UUID) -> T | None:
-        return await self._session.scalar(self.select(model).where(model.id == id))
+    async def get(self, model: type[T], id: uuid.UUID, *, for_update: bool = False) -> T | None:
+        statement = self.select(model).where(model.id == id)
+        if for_update:
+            statement = statement.with_for_update()
+        return await self._session.scalar(statement)
+
+    async def delete_where(self, model: type[T], *criteria: ColumnElement[bool]) -> int:
+        self._require_tenant_owned(model)
+        result = await self._session.execute(
+            delete(model).where(model.tenant_id == self.tenant_id, *criteria)
+        )
+        return result.rowcount
+
+    async def delete(self, obj: TenantOwned) -> None:
+        self._require_tenant_owned(type(obj))
+        if obj.tenant_id != self.tenant_id:
+            raise ValueError("Refusing to delete a row that belongs to another tenant")
+        await self._session.delete(obj)
 
     async def count(self, model: type[T], *criteria: ColumnElement[bool]) -> int:
         self._require_tenant_owned(model)
@@ -57,6 +93,10 @@ class TenantDB:
             raise ValueError("Refusing to add a row that belongs to another tenant")
         self._session.add(obj)
 
+    def add_all(self, objs: Iterable[TenantOwned]) -> None:
+        for obj in objs:
+            self.add(obj)
+
     async def tenant(self) -> Tenant:
         tenant = await self._session.get(Tenant, self.tenant_id)
         if tenant is None:  # pragma: no cover - the key resolved, so the tenant exists
@@ -67,5 +107,10 @@ class TenantDB:
         await self._session.flush()
 
     async def commit(self) -> None:
-        # The tenant setting is transaction-local: queries after commit see no tenant rows.
         await self._session.commit()
+        # app.current_tenant is transaction-local; bind it again for the next transaction.
+        await bind_tenant(self._session, self.tenant_id)
+
+    async def rollback(self) -> None:
+        await self._session.rollback()
+        await bind_tenant(self._session, self.tenant_id)

@@ -24,6 +24,13 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    # Ingestion
+    storage_dir: str = "./data/uploads"  # uploaded files; a shared volume in Docker
+    max_upload_bytes: int = 10 * 1024 * 1024
+    url_fetch_max_bytes: int = 5 * 1024 * 1024
+    url_fetch_timeout_seconds: float = 20.0
+    ingest_job_timeout_seconds: int = 600
+
 
 @lru_cache
 def get_settings() -> Settings:

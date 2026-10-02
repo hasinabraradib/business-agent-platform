@@ -2,7 +2,7 @@ import asyncio
 import os
 import socket
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,6 +36,9 @@ TEST_DATABASE_URL = _with_database(_settings.database_url, _settings.test_databa
 TEST_OWNER_DATABASE_URL = _with_database(_settings.owner_database_url, _settings.test_database_name)
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["OWNER_DATABASE_URL"] = TEST_OWNER_DATABASE_URL
+# Redis: same server, a dedicated logical database that tests may flush.
+TEST_REDIS_URL = _settings.redis_url.rsplit("/", 1)[0] + "/15"
+os.environ["REDIS_URL"] = TEST_REDIS_URL
 get_settings.cache_clear()
 
 # Tests never call a real AI API, even if .env has a key.
@@ -161,3 +164,35 @@ def make_tenant(owner_engine: AsyncEngine) -> Callable[..., Awaitable[TenantFixt
 
 def bearer(key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
+
+
+class RecordingQueue:
+    """Stands in for Redis: records jobs so tests can run the worker step explicitly."""
+
+    def __init__(self) -> None:
+        self.jobs: list[tuple[uuid.UUID, uuid.UUID]] = []
+
+    async def enqueue_ingest(self, tenant_id: uuid.UUID, document_id: uuid.UUID) -> None:
+        self.jobs.append((tenant_id, document_id))
+
+
+@pytest.fixture(autouse=True)
+def job_queue(app) -> Iterator[RecordingQueue]:
+    """Autouse: no test enqueues to a real Redis unless it removes this override itself."""
+    from app.ingestion.queue import get_job_queue
+
+    queue = RecordingQueue()
+    app.dependency_overrides[get_job_queue] = lambda: queue
+    yield queue
+    app.dependency_overrides.pop(get_job_queue, None)
+
+
+@pytest.fixture(autouse=True)
+def storage(app, tmp_path):
+    """Autouse: uploaded files go to a per-test temporary directory."""
+    from app.ingestion.storage import FileStorage, get_storage
+
+    file_storage = FileStorage(tmp_path / "uploads")
+    app.dependency_overrides[get_storage] = lambda: file_storage
+    yield file_storage
+    app.dependency_overrides.pop(get_storage, None)

@@ -26,12 +26,25 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     env:
       # The API/tests connect as the non-superuser app role (created by the test setup), so RLS
       # applies; migrations and the CLI use the owner role.
       DATABASE_URL: postgresql+asyncpg://bap_app:ci-app-password@localhost:5432/app
       OWNER_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app
       TEST_DATABASE_NAME: app_test
+      REDIS_URL: redis://localhost:6379/0
+      # Tests always use fake embeddings and never reach the network; this is belt and braces.
+      EMBEDDING_PROVIDER: fake
 
     steps:
       - uses: actions/checkout@v4

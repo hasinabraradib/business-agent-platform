@@ -16,7 +16,7 @@ from sqlalchemy import text
 
 from app.db import get_sessionmaker
 from app.security import hash_api_key, is_well_formed_api_key
-from app.tenancy import TenantDB
+from app.tenancy import TenantDB, bind_tenant
 
 bearer_scheme = HTTPBearer(auto_error=False, description="API key: bap_admin_… or bap_widget_…")
 
@@ -53,10 +53,7 @@ async def authenticate(
         ).one_or_none()
         if row is None:
             raise _unauthorized()
-        await session.execute(
-            text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
-            {"tenant_id": str(row.tenant_id)},
-        )
+        await bind_tenant(session, row.tenant_id)
         yield AuthContext(
             tenant_id=row.tenant_id,
             api_key_id=row.api_key_id,

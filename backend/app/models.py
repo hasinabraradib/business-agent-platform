@@ -84,6 +84,9 @@ class ApiKey(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
 
 class Document(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     __tablename__ = "documents"
+    # Fetch server-generated values (updated_at) with RETURNING on UPDATE too, so responses
+    # never trigger a lazy load outside the async context.
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
     __table_args__ = (
         CheckConstraint(
             "status IN ('pending', 'processing', 'ready', 'failed')",

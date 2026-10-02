@@ -25,6 +25,9 @@ from app.db import Base
 ApiKeyKind = Literal["admin", "widget"]
 DocumentStatus = Literal["pending", "processing", "ready", "failed"]
 DOCUMENT_STATUSES: tuple[str, ...] = ("pending", "processing", "ready", "failed")
+MessageRole = Literal["user", "assistant"]
+# no_answer feeds the knowledge-gaps report; error marks a failed generation.
+MessageOutcome = Literal["answered", "no_answer", "smalltalk", "error"]
 # Fixed by the chunks.embedding column; every embedding provider must return this many dims.
 EMBEDDING_DIMENSIONS = 768
 
@@ -169,3 +172,62 @@ class Chunk(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
             persisted=True,
         ),
     )
+
+
+class Conversation(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "conversations"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
+    __table_args__ = (
+        CheckConstraint("channel IN ('web')", name="conversations_channel_check"),
+        CheckConstraint("status IN ('open', 'closed')", name="conversations_status_check"),
+        UniqueConstraint("tenant_id", "id", name="conversations_tenant_id_id_key"),
+        Index("ix_conversations_tenant_updated", "tenant_id", text("updated_at DESC")),
+    )
+
+    channel: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="web", server_default="web"
+    )
+    # Chosen by the website widget (e.g. a random id kept in the browser); not authenticated.
+    visitor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="open", server_default="open"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "messages"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "conversation_id"],
+            ["conversations.tenant_id", "conversations.id"],
+            ondelete="CASCADE",
+            name="messages_conversation_fkey",
+        ),
+        CheckConstraint("role IN ('user', 'assistant')", name="messages_role_check"),
+        CheckConstraint(
+            "outcome IS NULL OR outcome IN ('answered', 'no_answer', 'smalltalk', 'error')",
+            name="messages_outcome_check",
+        ),
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # [{marker, chunk_id, document_id, document_title, metadata, snippet}]
+    citations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    outcome: Mapped[str | None] = mapped_column(String(16))  # assistant messages only
+    model: Mapped[str | None] = mapped_column(String(100))
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    timings: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    # {mode, query, rewritten, chunk_ids, top_similarity, has_relevant_context, ...}
+    retrieval: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)

@@ -232,3 +232,54 @@ async def test_keyword_index_keeps_bengali_words_whole(owner_engine: AsyncEngine
             text("SELECT tsvector_to_array(to_tsvector('simple', 'কাচ্চি বিরিয়ানি Biryani'))")
         )
     assert sorted(lexemes) == sorted(["biryani", "কাচ্চি", "বিরিয়ানি"])
+
+
+async def _insert_conversation(conn: AsyncConnection, tenant_id: uuid.UUID) -> uuid.UUID:
+    conversation = await conn.scalar(
+        text(
+            "INSERT INTO conversations (tenant_id, visitor_id) VALUES (:t, 'visitor') RETURNING id"
+        ),
+        {"t": tenant_id},
+    )
+    await conn.execute(
+        text(
+            "INSERT INTO messages (tenant_id, conversation_id, role, content) "
+            "VALUES (:t, :c, 'user', 'hello')"
+        ),
+        {"t": tenant_id, "c": conversation},
+    )
+    return conversation
+
+
+async def test_conversations_and_messages_are_tenant_isolated(
+    app_engine: AsyncEngine, owner_engine: AsyncEngine, two_tenants
+) -> None:
+    tenant_a, tenant_b = two_tenants
+    async with owner_engine.begin() as conn:
+        conv_a = await _insert_conversation(conn, tenant_a)
+        conv_b = await _insert_conversation(conn, tenant_b)
+
+    async with app_engine.begin() as conn:
+        assert await conn.scalar(text("SELECT count(*) FROM conversations")) == 0
+        assert await conn.scalar(text("SELECT count(*) FROM messages")) == 0
+    async with app_engine.begin() as conn:
+        await _set_tenant(conn, tenant_a)
+        assert (await conn.scalars(text("SELECT id FROM conversations"))).all() == [conv_a]
+        convs = (await conn.scalars(text("SELECT conversation_id FROM messages"))).all()
+        assert convs == [conv_a]
+    # A message cannot be attached to another tenant's conversation, even with A's tenant_id.
+    with pytest.raises(DBAPIError, match="messages_conversation_fkey"):
+        async with app_engine.begin() as conn:
+            await _set_tenant(conn, tenant_a)
+            await conn.execute(
+                text(
+                    "INSERT INTO messages (tenant_id, conversation_id, role, content) "
+                    "VALUES (:t, :c, 'user', 'smuggled')"
+                ),
+                {"t": tenant_a, "c": conv_b},
+            )
+    # Messages are append-only for the application role.
+    with pytest.raises(DBAPIError, match="permission denied"):
+        async with app_engine.begin() as conn:
+            await _set_tenant(conn, tenant_a)
+            await conn.execute(text("UPDATE messages SET content = 'edited'"))

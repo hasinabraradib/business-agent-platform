@@ -29,7 +29,10 @@ backend/app/          FastAPI app: main.py (create_app), config.py (Settings), d
   worker.py           arq WorkerSettings (`arq app.worker.WorkerSettings`)
 backend/alembic/      migrations (async env.py; runs as OWNER_DATABASE_URL)
 backend/tests/        pytest suite (conftest.py sets up the test database)
-web/                  frontend (placeholder)
+web/widget/           embeddable chat widget (TypeScript, esbuild, no UI framework)
+  src/tokens.ts       design tokens: the single source for colours, radii, spacing, shadows
+web/demo/             two static demo sites embedding the widget (served on :8080)
+scripts/demo-setup.sh builds the widget and writes the git-ignored demo page config
 evals/                assistant evaluations (placeholder)
 demo/                 fictional demo knowledge ingested by `seed-demo`
 ```
@@ -47,6 +50,8 @@ uv run alembic revision --autogenerate -m "describe change"   # then add RLS/gra
 uv run python -m app.cli seed-demo     # or create-tenant / create-key --tenant ... --kind ...
 uv run arq app.worker.WorkerSettings   # run the ingestion worker outside Docker
 docker compose run --rm migrate python -m app.cli seed-demo   # repo root, inside Compose
+cd web/widget && npm ci && npm run check   # widget: types, lint, tests, build + gzip budget
+./scripts/demo-setup.sh                 # repo root: widget build + demo page config
 ```
 
 ## Database roles
@@ -92,6 +97,12 @@ docker compose run --rm migrate python -m app.cli seed-demo   # repo root, insid
   never relax `decide_outcome` without a test. Every chat run must end with exactly one done or
   error event. Tests use `FakeChatProvider`; `conftest.py` forces `CHAT_PROVIDER=fake`.
 - New chat providers go in `app/llm/` only (subclass + registry entry).
+- Widget: never use `innerHTML`/`insertAdjacentHTML`; build DOM with `createElement` and
+  `textContent` (`src/render.ts` for any server or model text, http/https links only). Colours,
+  radii, spacing, shadows and motion come from `src/tokens.ts`, never hard-coded in styles. Keep
+  `widget.js` under its gzip budget (enforced by `npm run build`). No browser end-to-end
+  framework in the repo: test with `node --test` and happy-dom.
+- Never commit widget keys: demo pages read the git-ignored `web/demo/config.local.js`.
 - New embedding providers go in `app/embeddings/` only (subclass + registry entry); vectors must
   be `EMBEDDING_DIMENSIONS` long, and each chunk records its `embedding_model`.
 - Keep dependencies light and permissively licensed (MIT/BSD/Apache-2.0): no PyTorch or local

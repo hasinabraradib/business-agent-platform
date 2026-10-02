@@ -232,3 +232,80 @@ a confident-sounding reply without support is counted as a gap.
 - **Failures:** a model error or timeout (first token, idle gap or total) ends the stream with an
   `error` event and a short apology with the fallback contact, and is stored with the error. A
   stream never hangs.
+
+## Widget
+
+The embeddable chat widget lives in `web/widget/`: TypeScript with no UI framework, bundled into
+one self-contained `widget.js` (about 8 KB gzipped; the build fails above 12 KB). The API serves
+it at `/widget.js`, with an ETag and a 5-minute cache. A business embeds it with one tag:
+
+```html
+<script src="https://api.example.com/widget.js" data-key="bap_widget_..." async></script>
+```
+
+`data-api` sets the API base URL if it differs from where `widget.js` is served. The widget
+loads `GET /v1/widget/config` when first opened, then chats through `POST /v1/chat`, reading the
+response body as Server-Sent Events. (`EventSource` cannot send a POST or an `Authorization`
+header.)
+
+**Settings** (in `tenants.settings`, returned by `/v1/widget/config`): `assistant_name`,
+`business_name`, `greeting`, `accent_color` (`#RRGGBB`; default lime `#C5EE4F`) and up to four
+`suggested_questions`. `allowed_origins` controls which websites may use the tenant's widget key.
+An invalid stored value falls back to its default rather than breaking the widget.
+
+**Design tokens.** Colours, radii, spacing, shadows, type and motion are defined once in
+`web/widget/src/tokens.ts`. The widget uses them as CSS custom properties (`--bap-color-ink`,
+`--bap-radius-panel`, …), and the build also writes them to `dist/tokens.css` so the dashboard
+can reuse them. Assistant bubbles use the tenant's accent colour, and the widget picks dark or
+white text from the accent's luminance so contrast passes (lime gets dark text, terracotta gets
+white).
+
+**Security**
+- Renders inside a Shadow DOM (with `all: initial` on the host), so the page's CSS cannot reach
+  the widget and the widget's CSS cannot reach the page.
+- No `innerHTML` anywhere. Model and server text become text nodes, so an HTML or script
+  payload shows as text. Only `http:`/`https:` URLs become links (with `noopener noreferrer`);
+  `javascript:`, `data:` and other schemes stay plain text. The accent colour is validated both
+  server- and client-side, since it ends up in CSS.
+- Widget keys work only from the tenant's `allowed_origins`, and are rate-limited (see Chat).
+  The key is public by design; it cannot reach admin routes.
+- `visitor_id`, the conversation id and the last 50 messages are kept in `localStorage` per
+  widget key. If storage is unavailable, the widget falls back to memory.
+
+**Accessibility**
+- Every control is a labelled native `button`, `textarea` or `form`, so the whole widget works
+  from the keyboard: Enter sends, Shift+Enter adds a new line.
+- Opening moves focus to the input. Closing (button or Escape) returns it to the launcher.
+  Focus never falls out of the panel when a control it was on disappears.
+- The conversation log is `aria-live="off"`, so streamed tokens are not read one by one. Each
+  finished reply (or error) is announced once through a polite live region.
+- Visible focus rings, and animations and transitions are switched off under
+  `prefers-reduced-motion`.
+- Text contrast meets WCAG AA; tests check the token colour pairs and the bubble text choice.
+- A system font stack that includes Bengali faces (Noto Sans Bengali, Kohinoor Bangla, Nirmala
+  UI, Vrinda, …), so nothing is downloaded and Bengali renders well.
+- Full screen on phones.
+
+**Develop and test** (Node 22.6+):
+
+```bash
+cd web/widget
+npm ci
+npm run check    # type-check, lint (oxlint), unit tests (node --test + happy-dom), build + size budget
+```
+
+**Demo pages.** `web/demo/` has two invented business sites, one for Nodi Kitchen and one for
+Jamdani Lane, each embedding the widget with its own theme. They run on their own origin
+(`http://localhost:8080`, the `demo` Compose service), like a real customer website. No key is
+committed: `seed-demo --demo-config` writes fresh demo widget keys to the git-ignored
+`web/demo/config.local.js`.
+
+```bash
+docker compose up -d --build
+./scripts/demo-setup.sh          # builds widget.js and writes web/demo/config.local.js
+open http://localhost:8080/nodi-kitchen/   # and http://localhost:8080/jamdani-lane/
+```
+
+To run everything offline (no Gemini calls), start the stack with
+`CHAT_PROVIDER=fake EMBEDDING_PROVIDER=fake RERANKER=noop` set in your shell or `.env`. Do this
+on a fresh database, so the demo knowledge is embedded with the fake model too.

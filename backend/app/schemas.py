@@ -112,6 +112,10 @@ class ChatRequestBody(BaseModel):
     visitor_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
     message: str = Field(min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
     stream: bool = True
+    # Set by the widget per customer message; resending the same id never stores it twice.
+    client_message_id: str | None = Field(
+        default=None, min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"
+    )
 
 
 class Citation(BaseModel):
@@ -132,6 +136,8 @@ class ChatResponseBody(BaseModel):
     usage: dict[str, int]
     timings: dict[str, float]
     retrieval: dict[str, Any] | None
+    model: str | None = None
+    replayed: bool = False  # a retry of an already answered client_message_id
     error: str | None = None
 
 
@@ -157,6 +163,8 @@ class MessageOut(ORMModel):
     timings: dict[str, Any]
     retrieval: dict[str, Any] | None
     error: str | None
+    client_message_id: str | None
+    in_reply_to: uuid.UUID | None
     created_at: datetime
 
 

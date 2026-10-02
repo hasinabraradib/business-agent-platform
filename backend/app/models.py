@@ -199,12 +199,27 @@ class Conversation(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
 
 class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     __tablename__ = "messages"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
     __table_args__ = (
         ForeignKeyConstraint(
             ["tenant_id", "conversation_id"],
             ["conversations.tenant_id", "conversations.id"],
             ondelete="CASCADE",
             name="messages_conversation_fkey",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "in_reply_to"],
+            ["messages.tenant_id", "messages.id"],
+            name="messages_in_reply_to_fkey",
+        ),
+        UniqueConstraint("tenant_id", "id", name="messages_tenant_id_id_key"),
+        # Idempotent retries: one customer message per client-generated id.
+        Index(
+            "uq_messages_tenant_client_message_id",
+            "tenant_id",
+            "client_message_id",
+            unique=True,
+            postgresql_where=text("client_message_id IS NOT NULL"),
         ),
         CheckConstraint("role IN ('user', 'assistant')", name="messages_role_check"),
         CheckConstraint(
@@ -231,3 +246,7 @@ class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     # {mode, query, rewritten, chunk_ids, top_similarity, has_relevant_context, ...}
     retrieval: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    # Customer messages: the widget's id for the message, so a retry is not stored twice.
+    client_message_id: Mapped[str | None] = mapped_column(String(64))
+    # Assistant messages: the customer message this replies to.
+    in_reply_to: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))

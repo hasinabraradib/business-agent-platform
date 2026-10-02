@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.llm import ChatRequest, FakeChatProvider
+from app.llm import ChatRequest, Scripted
 from tests.retrieval_helpers import add_document
 
 GREETINGS = {"hi", "hello", "thanks", "thank you", "হ্যালো", "assalamualaikum"}
@@ -17,30 +17,56 @@ ORIGIN = "https://cafe.example"
 
 
 def customer_message(request: ChatRequest) -> str:
-    match = re.search(
-        r"<customer-message-(\w+)>\n(.*)\n</customer-message-\1>", request.turns[-1].text, re.S
-    )
-    return match.group(2) if match else ""
+    """The current customer message (the last user message's customer-message block)."""
+    for message in reversed(request.messages):
+        if message.role == "user":
+            match = re.search(
+                r"<customer-message-(\w+)>\n(.*)\n</customer-message-\1>", message.text, re.S
+            )
+            return match.group(2) if match else message.text
+    return ""
 
 
-def provided_markers(request: ChatRequest) -> list[int]:
-    return [int(m) for m in re.findall(r"^\[(\d+)\] ", request.turns[-1].text, re.M)]
+def earlier_sources(request: ChatRequest) -> str:
+    for message in reversed(request.messages):
+        if message.role == "user":
+            match = re.search(r"<earlier-sources-\w+>(.*?)</earlier-sources", message.text, re.S)
+            return match.group(1) if match else ""
+    return ""
 
 
-def first_passage_line(request: ChatRequest) -> str:
-    match = re.search(r"^\[1\] [^\n]*\n([^\n]+)", request.turns[-1].text, re.M)
-    return match.group(1) if match else ""
+def tool_results(request: ChatRequest) -> list[str]:
+    return [m.text for m in request.messages if m.role == "tool"]
 
 
-def smart_responder(request: ChatRequest, model: str) -> str:
-    """Greets, answers from passage [1] with a citation, or says it does not know."""
-    if model == FakeChatProvider.helper_model:
-        return customer_message(request)
+def searched(request: ChatRequest) -> bool:
+    return request.messages[-1].role == "tool"
+
+
+def first_passage(text: str) -> tuple[str, str] | None:
+    match = re.search(r"^\[(\d+)\] [^\n]*\n([^\n]+)", text, re.M)
+    return (match.group(1), match.group(2)) if match else None
+
+
+def smart_responder(request: ChatRequest, model: str) -> "str | Scripted":
+    """Greets and thanks without searching; answers a follow-up about spice from the earlier
+    sources; otherwise searches once (query = the message) and cites the first passage."""
+    if searched(request):
+        passage = first_passage(request.messages[-1].text)
+        if passage:
+            return f"[[answered]]\n{passage[1]} [{passage[0]}]"
+        return "[[no_answer]]\nSorry, I don't have that information."
     message = customer_message(request).strip().lower().rstrip("!.")
     if message in GREETINGS:
         return "[[smalltalk]]\nHello! How can I help you today?"
-    if provided_markers(request):
-        return f"[[answered]]\n{first_passage_line(request)} [1]"
+    if message.startswith("thanks"):
+        return "[[smalltalk]]\nAnytime!"
+    earlier = earlier_sources(request)
+    if "spicy" in message and "spice_level" in earlier:
+        marker = re.search(r"^\[(\d+)\] ", earlier, re.M).group(1)
+        return f"[[answered]]\nIt's medium spicy [{marker}]."
+    if request.tools:
+        return Scripted(tool_calls=[("search_knowledge", {"query": customer_message(request)})])
     return "[[no_answer]]\nSorry, I don't have that information."
 
 

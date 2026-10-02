@@ -8,7 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
 from app.auth import AuthContext, authenticate
+from app.chat.deps import get_chat_service
 from app.chat.origins import check_origin, preflight
+from app.chat.service import ChatService
 from app.chat.settings import TenantChatSettings
 from app.config import get_settings
 
@@ -19,6 +21,7 @@ AnyKeyAuth = Annotated[AuthContext, Depends(authenticate)]
 
 
 class WidgetConfig(BaseModel):
+    offline: bool  # the API runs the offline fake chat model (demo/development)
     assistant_name: str
     business_name: str
     greeting: str
@@ -32,12 +35,15 @@ async def config_preflight(request: Request) -> Response:
 
 
 @config_router.get("/config", response_model=WidgetConfig)
-async def widget_config(request: Request, auth: AnyKeyAuth) -> WidgetConfig:
+async def widget_config(
+    request: Request, auth: AnyKeyAuth, service: Annotated[ChatService, Depends(get_chat_service)]
+) -> WidgetConfig:
     """Appearance and greeting for the tenant that owns the key (same origin rules as chat)."""
     tenant = await auth.db.tenant()
     settings = TenantChatSettings.from_tenant(tenant.name, tenant.settings)
     check_origin(request, auth, settings)
     return WidgetConfig(
+        offline=service.chain.offline,
         assistant_name=settings.assistant_name,
         business_name=settings.business_name,
         greeting=settings.greeting,

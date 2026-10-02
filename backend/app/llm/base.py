@@ -1,21 +1,44 @@
+"""Provider-neutral chat types: messages with tool calls, streamed events, errors."""
+
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
-class ChatTurn:
-    role: Literal["user", "model"]
-    text: str
+class ToolSpec:
+    name: str
+    description: str
+    parameters: dict[str, Any]  # JSON Schema for the arguments object
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
+class Message:
+    role: Literal["user", "assistant", "tool"]
+    text: str = ""
+    tool_calls: list[ToolCall] = field(default_factory=list)  # assistant
+    tool_call_id: str | None = None  # tool
+    tool_name: str | None = None  # tool
+    # Provider-specific data needed to replay this message exactly (e.g. Gemini parts with
+    # thought signatures), keyed by "<provider>:<model>".
+    provider_state: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class ChatRequest:
     system: str
-    turns: list[ChatTurn]
-    temperature: float = 0.2
-    max_output_tokens: int = 1024
+    messages: list[Message]
+    tools: list[ToolSpec] = field(default_factory=list)
+    temperature: float = 0.4
+    max_output_tokens: int = 800
 
 
 @dataclass
@@ -25,18 +48,25 @@ class Usage:
 
 
 @dataclass(frozen=True)
-class ChatChunk:
-    """A streamed piece of the reply. The final chunk carries usage (and usually no text)."""
-
-    text: str = ""
-    usage: Usage | None = None
-    model: str | None = None  # on the final chunk: the model that actually answered
-
-
-@dataclass
-class Completion:
+class TextDelta:
     text: str
-    usage: Usage = field(default_factory=Usage)
+
+
+@dataclass(frozen=True)
+class ToolCallEvent:
+    call: ToolCall
+
+
+@dataclass(frozen=True)
+class Finish:
+    """Always the last event of a successful stream."""
+
+    usage: Usage
+    model: str  # "<provider>:<model>" that actually answered
+    assistant: Message  # the assistant message to append to the conversation for the next step
+
+
+StreamEvent = TextDelta | ToolCallEvent | Finish
 
 
 class ChatError(Exception):
@@ -44,26 +74,22 @@ class ChatError(Exception):
 
     def __init__(self, message: str, *, model: str | None = None) -> None:
         super().__init__(message)
-        self.model = model  # the model whose call failed (last one tried, with fallbacks)
+        self.model = model  # the model whose call failed (the last one tried, in a chain)
+
+
+class ChatUnavailable(ChatError):
+    """Overloaded, rate-limited or unreachable before anything was streamed: try another model."""
 
 
 class ChatProvider(ABC):
-    #: Model for customer-facing answers.
-    answer_model: str
-    #: Low-cost model for small helper calls (e.g. rewriting follow-up questions).
-    helper_model: str
+    #: Short provider name ("gemini", "openai_compat", "fake").
+    name: str
+    #: True for the offline fake model (the widget shows a notice).
+    offline: bool = False
 
     @abstractmethod
-    def stream(self, request: ChatRequest, *, model: str) -> AsyncIterator[ChatChunk]:
-        """Yield text chunks as they are generated, then a final chunk with usage."""
-
-    async def complete(self, request: ChatRequest, *, model: str) -> Completion:
-        text, usage = [], Usage()
-        async for chunk in self.stream(request, model=model):
-            text.append(chunk.text)
-            if chunk.usage is not None:
-                usage = chunk.usage
-        return Completion("".join(text), usage)
+    def stream(self, request: ChatRequest, *, model: str) -> AsyncIterator[StreamEvent]:
+        """Yield TextDelta / ToolCallEvent events, then exactly one Finish."""
 
     async def aclose(self) -> None:  # noqa: B027 - optional hook
         pass

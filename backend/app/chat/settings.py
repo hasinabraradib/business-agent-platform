@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -25,6 +26,19 @@ class TenantChatSettings(BaseModel):
     # One accent colour per tenant (#RRGGBB only: it ends up in CSS). Platform default: lime.
     accent_color: str = Field(default="#C5EE4F", pattern=r"^#[0-9A-Fa-f]{6}$")
     suggested_questions: list[str] = Field(default_factory=list, max_length=4)
+    # IANA timezone of the business, so the assistant knows the local date and time.
+    timezone: str = Field(default="UTC", max_length=64)
+    # Extra instructions from the business (appended to the system prompt as guidance).
+    instructions: str = Field(default="", max_length=1000)
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"unknown timezone {value!r}") from exc
+        return value
 
     @field_validator("suggested_questions")
     @classmethod

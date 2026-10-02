@@ -1,7 +1,8 @@
-"""Chat models behind one interface, chosen by the CHAT_PROVIDER setting.
+"""Chat models behind one interface, chained for failover.
 
-To add a provider: subclass ChatProvider in this package, add its settings to LLMSettings and
-register a factory in PROVIDERS. Nothing outside this package changes.
+CHAT_MODELS lists "provider:model" candidates in order (primary first). Providers: gemini,
+openai_compat (any OpenAI-compatible endpoint, via OPENAI_COMPAT_*), fake (offline). To add a
+provider: subclass ChatProvider in this package and register it in PROVIDERS.
 """
 
 import logging
@@ -10,35 +11,45 @@ from collections.abc import Callable
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.llm.base import (
-    ChatChunk,
     ChatError,
     ChatProvider,
     ChatRequest,
-    ChatTurn,
-    Completion,
+    ChatUnavailable,
+    Finish,
+    Message,
+    StreamEvent,
+    TextDelta,
+    ToolCall,
+    ToolCallEvent,
+    ToolSpec,
     Usage,
 )
+from app.llm.chain import Candidate, ChatChain
 from app.llm.fake import FakeChatProvider, Scripted
-from app.llm.gemini import (
-    DEFAULT_ANSWER_MODEL,
-    DEFAULT_FALLBACK_MODEL,
-    DEFAULT_HELPER_MODEL,
-    GeminiChatProvider,
-)
+from app.llm.gemini import GeminiChatProvider
+from app.llm.openai_compat import OpenAICompatChatProvider
 
 __all__ = [
-    "ChatChunk",
+    "Candidate",
+    "ChatChain",
     "ChatError",
     "ChatProvider",
     "ChatRequest",
-    "ChatTurn",
-    "Completion",
+    "ChatUnavailable",
     "FakeChatProvider",
+    "Finish",
     "GeminiChatProvider",
     "LLMSettings",
+    "Message",
+    "OpenAICompatChatProvider",
     "Scripted",
+    "StreamEvent",
+    "TextDelta",
+    "ToolCall",
+    "ToolCallEvent",
+    "ToolSpec",
     "Usage",
-    "get_chat_provider",
+    "get_chat_chain",
 ]
 
 logger = logging.getLogger(__name__)
@@ -49,37 +60,65 @@ class LLMSettings(BaseSettings):
         env_file=("../.env", ".env"), env_file_encoding="utf-8", extra="ignore"
     )
 
-    # auto: gemini when GEMINI_API_KEY is set, otherwise the fake model. Or gemini | fake.
+    # auto: the CHAT_MODELS chain (skipping providers without credentials), or the offline fake
+    # model if none is usable. fake: always the offline model.
     chat_provider: str = "auto"
+    chat_models: str = "gemini:gemini-3.8-flash,gemini:gemini-3.6-flash"
+    chat_failover_seconds: float = 3.0
+    chat_cooldown_seconds: float = 60.0
     gemini_api_key: str = ""
-    chat_model: str = DEFAULT_ANSWER_MODEL
-    helper_model: str = DEFAULT_HELPER_MODEL
-    # Used for answers when the main model stays overloaded/rate-limited. Empty disables.
-    chat_fallback_model: str = DEFAULT_FALLBACK_MODEL
-    chat_thinking_level: str = "LOW"
-    helper_thinking_level: str = "MINIMAL"
+    openai_compat_base_url: str = ""
+    openai_compat_api_key: str = ""
+    openai_compat_model: str = ""
+    openai_compat_reasoning_effort: str = ""  # e.g. "minimal"; empty: not sent
 
 
-PROVIDERS: dict[str, Callable[[LLMSettings], ChatProvider]] = {
-    "fake": lambda settings: FakeChatProvider(),
-    "gemini": lambda settings: GeminiChatProvider(
-        settings.gemini_api_key,
-        settings.chat_model,
-        settings.helper_model,
-        answer_thinking_level=settings.chat_thinking_level or None,
-        helper_thinking_level=settings.helper_thinking_level or None,
-        fallback_model=settings.chat_fallback_model or None,
+PROVIDERS: dict[str, Callable[[LLMSettings], ChatProvider | None]] = {
+    "gemini": lambda s: GeminiChatProvider(s.gemini_api_key) if s.gemini_api_key else None,
+    "openai_compat": lambda s: (
+        OpenAICompatChatProvider(
+            s.openai_compat_base_url,
+            s.openai_compat_api_key,
+            reasoning_effort=s.openai_compat_reasoning_effort or None,
+        )
+        if s.openai_compat_base_url and s.openai_compat_api_key
+        else None
     ),
 }
 
 
-def get_chat_provider(settings: LLMSettings | None = None) -> ChatProvider:
+def _entries(settings: LLMSettings) -> list[tuple[str, str]]:
+    entries = []
+    for raw in settings.chat_models.split(","):
+        provider, _, model = raw.strip().partition(":")
+        if provider and model:
+            entries.append((provider.strip(), model.strip()))
+    configured = settings.openai_compat_model and settings.openai_compat_base_url
+    if configured and not any(p == "openai_compat" for p, _ in entries):
+        entries.append(("openai_compat", settings.openai_compat_model))  # cross-provider fallback
+    return entries
+
+
+def get_chat_chain(settings: LLMSettings | None = None) -> ChatChain:
     settings = settings or LLMSettings()
-    name = settings.chat_provider.strip().lower()
-    if name == "auto":
-        name = "gemini" if settings.gemini_api_key else "fake"
-        if name == "fake":
-            logger.warning("No GEMINI_API_KEY set: using the fake chat model (not for production)")
-    if name not in PROVIDERS:
-        raise ValueError(f"Unknown CHAT_PROVIDER {name!r}; choose from {sorted(PROVIDERS)}")
-    return PROVIDERS[name](settings)
+    chain_options = {
+        "first_event_timeout": settings.chat_failover_seconds,
+        "cooldown_seconds": settings.chat_cooldown_seconds,
+    }
+    if settings.chat_provider.strip().lower() == "fake":
+        return ChatChain([Candidate(FakeChatProvider(), "fake-chat")], **chain_options)
+    providers: dict[str, ChatProvider | None] = {}
+    candidates = []
+    for provider_name, model in _entries(settings):
+        if provider_name not in PROVIDERS:
+            raise ValueError(f"Unknown chat provider {provider_name!r} in CHAT_MODELS")
+        if provider_name not in providers:
+            providers[provider_name] = PROVIDERS[provider_name](settings)
+        if (provider := providers[provider_name]) is None:
+            logger.warning("Skipping %s:%s (no credentials configured)", provider_name, model)
+            continue
+        candidates.append(Candidate(provider, model))
+    if not candidates:
+        logger.warning("No chat model credentials configured: using the offline fake model")
+        return ChatChain([Candidate(FakeChatProvider(), "fake-chat")], **chain_options)
+    return ChatChain(candidates, **chain_options)

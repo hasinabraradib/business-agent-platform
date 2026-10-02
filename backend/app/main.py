@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         if hasattr(retriever.cache, "aclose"):
             await retriever.cache.aclose()
     if get_chat_service.cache_info().currsize:
-        await get_chat_service().provider.aclose()
+        await get_chat_service().chain.aclose()
     if get_rate_limiter.cache_info().currsize:
         await get_rate_limiter().aclose()
 

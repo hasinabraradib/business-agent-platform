@@ -1,110 +1,120 @@
-"""Gemini chat over the REST API with server-sent events (no SDK dependency).
+"""Gemini chat over REST with server-sent events and function calling (no SDK dependency).
 
-Models (checked 2026-10, https://ai.google.dev/gemini-api/docs/models):
-- answers: gemini-3.8-flash, Google's current default general-purpose model;
-- helper calls: gemini-3.5-flash-lite, the low-cost model the reranker also uses.
+Models (checked 2026-10, https://ai.google.dev/gemini-api/docs/models): gemini-3.8-flash is
+Google's default general-purpose model; gemini-3.6-flash is the fallback. Each request uses the
+lowest thinking level the model supports (3.8-flash: low; 3.6-flash: minimal).
+
+Gemini 3 attaches thought signatures to response parts (e.g. functionCall parts); the model's
+parts are replayed exactly as received in the follow-up request.
 """
 
-import asyncio
 import json
-import logging
-import random
-from collections.abc import AsyncIterator, Awaitable, Callable
+import uuid
+from collections.abc import AsyncIterator
+from typing import Any
 
 import httpx
 
-from app.llm.base import ChatChunk, ChatError, ChatProvider, ChatRequest, Usage
+from app.llm.base import (
+    ChatError,
+    ChatProvider,
+    ChatRequest,
+    ChatUnavailable,
+    Finish,
+    Message,
+    StreamEvent,
+    TextDelta,
+    ToolCall,
+    ToolCallEvent,
+    Usage,
+)
 
 API_BASE = "https://generativelanguage.googleapis.com/v1beta"
-DEFAULT_ANSWER_MODEL = "gemini-3.8-flash"
-DEFAULT_HELPER_MODEL = "gemini-3.5-flash-lite"
-DEFAULT_FALLBACK_MODEL = "gemini-3.6-flash"
 BLOCKING_FINISH_REASONS = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 MAX_ERROR_CHARS = 2000
-
-logger = logging.getLogger(__name__)
-
-
-class _Unavailable(ChatError):
-    """A retryable failure before anything was streamed."""
+# Lowest supported thinking level per model (Google's thinking guide, 2026-10).
+LOWEST_THINKING = {"gemini-3.8-flash": "LOW", "gemini-3.6-flash": "MINIMAL"}
 
 
 class GeminiChatProvider(ChatProvider):
+    name = "gemini"
+
     def __init__(
         self,
         api_key: str,
-        answer_model: str = DEFAULT_ANSWER_MODEL,
-        helper_model: str = DEFAULT_HELPER_MODEL,
         *,
-        answer_thinking_level: str | None = "LOW",
-        helper_thinking_level: str | None = "MINIMAL",
-        fallback_model: str | None = DEFAULT_FALLBACK_MODEL,
-        max_attempts: int = 3,
-        base_delay: float = 0.5,
+        thinking_levels: dict[str, str] | None = None,
         timeout: float = 60.0,
         client: httpx.AsyncClient | None = None,
-        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         if not api_key:
             raise ValueError("GeminiChatProvider needs an API key (GEMINI_API_KEY)")
-        self.answer_model = answer_model
-        self.helper_model = helper_model
-        self.fallback_model = fallback_model if fallback_model != answer_model else None
-        self._thinking = {answer_model: answer_thinking_level, helper_model: helper_thinking_level}
-        if self.fallback_model:
-            self._thinking[self.fallback_model] = answer_thinking_level
-        self._max_attempts = max_attempts
-        self._base_delay = base_delay
-        self._sleep = sleep
+        self._thinking = {**LOWEST_THINKING, **(thinking_levels or {})}
         self._client = client or httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10))
         self._headers = {"x-goog-api-key": api_key}  # never in the URL
 
-    def build_body(self, request: ChatRequest, model: str) -> dict:
-        generation_config: dict = {
+    def _contents(self, messages: list[Message], model: str) -> list[dict[str, Any]]:
+        key = f"{self.name}:{model}"
+        contents: list[dict[str, Any]] = []
+        for message in messages:
+            if message.role == "user":
+                contents.append({"role": "user", "parts": [{"text": message.text}]})
+            elif message.role == "assistant":
+                parts = message.provider_state.get(key)
+                if parts is None:  # written by another model/provider: rebuild generically
+                    parts = ([{"text": message.text}] if message.text else []) + [
+                        {"functionCall": {"name": call.name, "args": call.arguments}}
+                        for call in message.tool_calls
+                    ]
+                contents.append({"role": "model", "parts": parts})
+            else:
+                part = {
+                    "functionResponse": {
+                        "name": message.tool_name,
+                        "response": {"result": message.text},
+                    }
+                }
+                # Consecutive tool results belong in one user turn.
+                if (
+                    contents
+                    and contents[-1]["role"] == "user"
+                    and "functionResponse" in (contents[-1]["parts"][0])
+                ):
+                    contents[-1]["parts"].append(part)
+                else:
+                    contents.append({"role": "user", "parts": [part]})
+        return contents
+
+    def build_body(self, request: ChatRequest, model: str) -> dict[str, Any]:
+        config: dict[str, Any] = {
             "temperature": request.temperature,
             "maxOutputTokens": request.max_output_tokens,
+            "thinkingConfig": {"thinkingLevel": self._thinking.get(model, "LOW")},
         }
-        if level := self._thinking.get(model):
-            generation_config["thinkingConfig"] = {"thinkingLevel": level}
-        return {
+        body: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": request.system}]},
-            "contents": [
-                {"role": turn.role, "parts": [{"text": turn.text}]} for turn in request.turns
-            ],
-            "generationConfig": generation_config,
+            "contents": self._contents(request.messages, model),
+            "generationConfig": config,
         }
+        if request.tools:
+            body["tools"] = [
+                {
+                    "functionDeclarations": [
+                        {"name": t.name, "description": t.description, "parameters": t.parameters}
+                        for t in request.tools
+                    ]
+                }
+            ]
+        return body
 
-    async def stream(self, request: ChatRequest, *, model: str) -> AsyncIterator[ChatChunk]:
-        """Stream from `model`, retrying overload/rate-limit errors that happen before anything
-        was streamed (the customer has seen nothing yet), then trying the fallback model for
-        answers. Failures after the first chunk are never retried."""
-        models = [model]
-        if model == self.answer_model and self.fallback_model:
-            models.append(self.fallback_model)
-        last_error: ChatError | None = None
-        for candidate in models:
-            for attempt in range(self._max_attempts):
-                try:
-                    async for chunk in self._stream_once(request, candidate):
-                        yield chunk
-                    return
-                except _Unavailable as exc:
-                    last_error = exc
-                    if attempt + 1 < self._max_attempts:
-                        delay = random.uniform(0, self._base_delay * 2**attempt)
-                        logger.warning(
-                            "%s unavailable (%s); retrying in %.1fs", candidate, exc, delay
-                        )
-                        await self._sleep(delay)
-            if candidate != models[-1]:
-                logger.warning("%s still unavailable; falling back to %s", candidate, models[-1])
-        assert last_error is not None
-        raise ChatError(str(last_error), model=last_error.model)
-
-    async def _stream_once(self, request: ChatRequest, model: str) -> AsyncIterator[ChatChunk]:
+    async def stream(self, request: ChatRequest, *, model: str) -> AsyncIterator[StreamEvent]:
+        label = f"{self.name}:{model}"
         url = f"{API_BASE}/models/{model}:streamGenerateContent?alt=sse"
         usage = Usage()
+        parts: list[dict[str, Any]] = []  # raw model parts, replayed verbatim next step
+        text: list[str] = []
+        calls: list[ToolCall] = []
         started = False
         try:
             async with self._client.stream(
@@ -115,9 +125,7 @@ class GeminiChatProvider(ChatProvider):
                         f"Gemini chat request failed ({response.status_code}): "
                         f"{_error_message(await response.aread())}"
                     )
-                    if response.status_code in RETRYABLE_STATUS:
-                        raise _Unavailable(error, model=model)
-                    raise ChatError(error, model=model)
+                    raise _for_status(response.status_code)(error, model=label)
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -125,47 +133,54 @@ class GeminiChatProvider(ChatProvider):
                         event = json.loads(line[5:])
                     except ValueError as exc:
                         error = "Gemini sent a malformed stream event"
-                        raise ChatError(error, model=model) from exc
-                    try:
-                        text, usage_update = _parse_event(event)
-                    except ChatError as exc:
-                        raise ChatError(str(exc), model=model) from exc
-                    if usage_update is not None:
-                        usage = usage_update
-                    if text:
-                        started = True
-                        yield ChatChunk(text=text)
+                        raise ChatError(error, model=label) from exc
+                    if reason := (event.get("promptFeedback") or {}).get("blockReason"):
+                        raise ChatError(f"Gemini blocked the prompt ({reason})", model=label)
+                    for candidate in event.get("candidates") or []:
+                        for part in (candidate.get("content") or {}).get("parts") or []:
+                            if part.get("thought"):
+                                continue  # never stream or replay reasoning text
+                            parts.append(part)
+                            if "functionCall" in part:
+                                call = ToolCall(
+                                    id=part["functionCall"].get("id") or uuid.uuid4().hex,
+                                    name=part["functionCall"].get("name", ""),
+                                    arguments=part["functionCall"].get("args") or {},
+                                )
+                                calls.append(call)
+                                started = True
+                                yield ToolCallEvent(call)
+                            elif part.get("text"):
+                                text.append(part["text"])
+                                started = True
+                                yield TextDelta(part["text"])
+                        reason = candidate.get("finishReason")
+                        if reason in BLOCKING_FINISH_REASONS:
+                            raise ChatError(f"Gemini stopped the answer ({reason})", model=label)
+                    if metadata := event.get("usageMetadata"):
+                        usage = Usage(
+                            prompt_tokens=int(metadata.get("promptTokenCount", 0)),
+                            completion_tokens=int(metadata.get("candidatesTokenCount", 0))
+                            + int(metadata.get("thoughtsTokenCount", 0)),
+                        )
         except httpx.TimeoutException as exc:
             error = f"Gemini chat request timed out ({type(exc).__name__})"
-            raise ChatError(error, model=model) from exc
+            raise (ChatError if started else ChatUnavailable)(error, model=label) from exc
         except httpx.TransportError as exc:
             error = f"Gemini chat request failed ({type(exc).__name__})"
-            failure = ChatError if started else _Unavailable
-            raise failure(error, model=model) from exc
-        yield ChatChunk(usage=usage, model=model)
+            raise (ChatError if started else ChatUnavailable)(error, model=label) from exc
+        assistant = Message(
+            role="assistant", text="".join(text), tool_calls=calls, provider_state={label: parts}
+        )
+        yield Finish(usage=usage, model=label, assistant=assistant)
 
     async def aclose(self) -> None:
         await self._client.aclose()
 
 
-def _parse_event(event: dict) -> tuple[str, Usage | None]:
-    if reason := (event.get("promptFeedback") or {}).get("blockReason"):
-        raise ChatError(f"Gemini blocked the prompt ({reason})")
-    text = []
-    for candidate in event.get("candidates") or []:
-        for part in (candidate.get("content") or {}).get("parts") or []:
-            if not part.get("thought"):  # never stream the model's reasoning
-                text.append(part.get("text", ""))
-        if (reason := candidate.get("finishReason")) in BLOCKING_FINISH_REASONS:
-            raise ChatError(f"Gemini stopped the answer ({reason})")
-    usage = None
-    if metadata := event.get("usageMetadata"):
-        usage = Usage(
-            prompt_tokens=int(metadata.get("promptTokenCount", 0)),
-            completion_tokens=int(metadata.get("candidatesTokenCount", 0))
-            + int(metadata.get("thoughtsTokenCount", 0)),
-        )
-    return "".join(text), usage
+def _for_status(status: int) -> type[ChatError]:
+    """Overload, rate limits and server errors mean "try another model"."""
+    return ChatUnavailable if status in RETRYABLE_STATUS else ChatError
 
 
 def _error_message(body: bytes) -> str:

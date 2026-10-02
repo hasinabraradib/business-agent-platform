@@ -44,6 +44,7 @@ async def test_config_returns_the_tenants_widget_settings(client, shops) -> None
     response = await get_config(client, a.widget_key)
     assert response.status_code == 200
     assert response.json() == {
+        "offline": True,  # tests run the offline fake chat model
         "assistant_name": "Nodi",
         "business_name": "Nodi Kitchen",
         "greeting": "Assalamu alaikum!",

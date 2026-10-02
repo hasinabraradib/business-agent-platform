@@ -108,15 +108,19 @@ class CitationFilter:
         return text
 
 
-def decide_outcome(tag: str | None, cited: list[int], context_provided: bool) -> str:
-    """The stored outcome. The model's tag is trusted only where code cannot contradict it:
+def decide_outcome(tag: str | None, cited: list[int], searched: bool) -> str:
+    """The stored outcome, decided from what code can verify:
 
-    - answered needs at least one valid citation to a chunk that was actually provided;
-    - smalltalk is the model's call (it recognises greetings in any language), unless it cited;
-    - everything else, including a missing tag, is no_answer.
+    - answered: the reply cites at least one source actually found in this conversation;
+    - no_answer: a search was made but the reply cites nothing (nothing relevant was found, or
+      the reply is not grounded), or the model reports it could not answer, or it claims an
+      answer with nothing to verify it;
+    - smalltalk: no search and no claim (the model's [[smalltalk]] tag, or no tag at all).
     """
-    if cited and context_provided:
+    if cited:
         return "answered"
-    if tag == "smalltalk":
+    if searched:
+        return "no_answer"
+    if tag in (None, "smalltalk"):
         return "smalltalk"
     return "no_answer"

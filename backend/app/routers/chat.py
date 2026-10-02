@@ -1,11 +1,13 @@
 """POST /v1/chat: customer chat, for widget keys (public, origin-checked) and admin keys."""
 
 import json
+import uuid
 from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.exc import IntegrityError
 
 from app.auth import AuthContext, authenticate
 from app.chat.deps import get_chat_service, get_rate_limiter
@@ -80,35 +82,82 @@ async def chat(
     check_origin(request, auth, settings)
     await _check_limits(limiter, auth, body, settings)
 
-    if body.conversation_id is not None:
-        conversation = await auth.db.get(Conversation, body.conversation_id)
-        # Another visitor's conversation is reported exactly like a missing one.
+    existing = None
+    if body.client_message_id:
+        existing = await auth.db.scalar(
+            auth.db.select(Message).where(
+                Message.client_message_id == body.client_message_id, Message.role == "user"
+            )
+        )
+    if existing is not None:
+        # A retry of a message we already have: never store it twice.
+        conversation = await auth.db.get(Conversation, existing.conversation_id)
         if conversation is None or conversation.visitor_id != body.visitor_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
             )
+        answered = await auth.db.scalar(
+            auth.db.select(Message)
+            .where(Message.in_reply_to == existing.id)
+            .where(Message.outcome.is_distinct_from("error"))
+            .order_by(Message.created_at.desc())
+        )
+        if answered is not None:
+            return _replay(answered, conversation.id, body.stream)
+        user_message = existing
     else:
-        conversation = Conversation(visitor_id=body.visitor_id, channel="web")
-        auth.db.add(conversation)
-        await auth.db.flush()
+        if body.conversation_id is not None:
+            conversation = await auth.db.get(Conversation, body.conversation_id)
+            # Another visitor's conversation is reported exactly like a missing one.
+            if conversation is None or conversation.visitor_id != body.visitor_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
+                )
+        else:
+            conversation = Conversation(visitor_id=body.visitor_id, channel="web")
+            auth.db.add(conversation)
+            await auth.db.flush()
+        user_message = Message(
+            conversation_id=conversation.id,
+            role="user",
+            content=body.message,
+            client_message_id=body.client_message_id,
+        )
+        auth.db.add(user_message)
+        try:
+            await auth.db.flush()
+        except IntegrityError:
+            # A concurrent retry with the same client_message_id won the race.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This message is already being answered; please retry in a moment",
+            ) from None
 
-    recent = await auth.db.scalars(
+    earlier = await auth.db.scalars(
         auth.db.select(Message)
-        .where(Message.conversation_id == conversation.id)
+        .where(Message.conversation_id == conversation.id, Message.id != user_message.id)
+        .where(Message.created_at <= user_message.created_at)
         .where(Message.outcome.is_distinct_from("error"))  # failed turns are not context
         .order_by(Message.created_at.desc())
         .limit(service.config.history_messages)
     )
-    history = [HistoryTurn(m.role, m.content) for m in reversed(recent)]
-    auth.db.add(Message(conversation_id=conversation.id, role="user", content=body.message))
+    history = [HistoryTurn(m.role, m.content) for m in reversed(earlier)]
+    earlier_chunk_ids: list[uuid.UUID] = []
+    for message in [m for m in earlier if m.role == "assistant"][:2]:  # the two latest replies
+        for citation in message.citations or []:
+            chunk_id = uuid.UUID(str(citation["chunk_id"]))
+            if chunk_id not in earlier_chunk_ids and len(earlier_chunk_ids) < 8:
+                earlier_chunk_ids.append(chunk_id)
     await auth.db.commit()
 
     turn = ChatTurnInput(
         tenant_id=auth.tenant_id,
         conversation_id=conversation.id,
-        message=body.message,
+        user_message_id=user_message.id,
+        message=user_message.content,
         history=history,
         settings=settings,
+        earlier_chunk_ids=earlier_chunk_ids,
     )
     if body.stream:
         return StreamingResponse(
@@ -117,6 +166,43 @@ async def chat(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     return await _collect(service, turn)
+
+
+def _replay(reply: Message, conversation_id: uuid.UUID, stream: bool):
+    """Return an already stored answer for a retried client_message_id."""
+    usage = {
+        "prompt_tokens": reply.prompt_tokens or 0,
+        "completion_tokens": reply.completion_tokens or 0,
+    }
+    if stream:
+
+        async def events() -> AsyncIterator[str]:
+            yield _event("token", {"text": reply.content})
+            yield _event("citations", {"citations": reply.citations})
+            yield _event(
+                "done",
+                {
+                    "message_id": reply.id,
+                    "conversation_id": conversation_id,
+                    "outcome": reply.outcome,
+                    "usage": usage,
+                    "replayed": True,
+                },
+            )
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+    return ChatResponseBody(
+        conversation_id=conversation_id,
+        message_id=reply.id,
+        reply=reply.content,
+        outcome=reply.outcome or "answered",
+        citations=reply.citations,
+        usage=usage,
+        timings=reply.timings,
+        retrieval=reply.retrieval,
+        model=reply.model,
+        replayed=True,
+    )
 
 
 def _event(name: str, data: dict[str, Any]) -> str:
@@ -137,6 +223,7 @@ async def _sse(service: ChatService, turn: ChatTurnInput) -> AsyncIterator[str]:
                     "conversation_id": event.conversation_id,
                     "outcome": event.outcome,
                     "usage": event.usage,
+                    "timings": event.timings,
                 },
             )
         elif isinstance(event, ErrorEvent):
@@ -165,6 +252,7 @@ async def _collect(service: ChatService, turn: ChatTurnInput) -> JSONResponse | 
                 usage=event.usage,
                 timings=event.timings,
                 retrieval=event.retrieval,
+                model=event.model,
             )
         elif isinstance(event, ErrorEvent):
             body = ChatResponseBody(

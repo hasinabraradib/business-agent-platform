@@ -47,8 +47,9 @@ class Settings(BaseSettings):
     strong_keyword_min_idf: float = 1.5
 
     # Chat
-    chat_retrieval_mode: str = "hybrid"  # hybrid_rerank switches the reranker on
+    chat_retrieval_mode: str = "hybrid"  # search tool mode; hybrid_rerank turns the reranker on
     chat_top_k: int = 8
+    chat_max_searches: int = 2  # search_knowledge calls allowed per customer message
     chat_history_messages: int = 6
     chat_first_token_timeout_seconds: float = 25.0
     chat_total_timeout_seconds: float = 90.0

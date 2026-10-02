@@ -1,6 +1,7 @@
 import asyncio
 import os
 import socket
+import tempfile
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass
@@ -40,6 +41,9 @@ os.environ["OWNER_DATABASE_URL"] = TEST_OWNER_DATABASE_URL
 TEST_REDIS_URL = _settings.redis_url.rsplit("/", 1)[0] + "/15"
 os.environ["REDIS_URL"] = TEST_REDIS_URL
 get_settings.cache_clear()
+
+# Files written outside the per-test storage fixture (e.g. by CLI subprocesses) go here.
+os.environ["STORAGE_DIR"] = tempfile.mkdtemp(prefix="bap-test-uploads-")
 
 # Tests never call a real AI API, even if .env has a key.
 os.environ["EMBEDDING_PROVIDER"] = "fake"

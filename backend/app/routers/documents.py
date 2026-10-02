@@ -1,7 +1,5 @@
-import hashlib
 import logging
 import uuid
-from pathlib import PurePath
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
@@ -9,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.auth import AdminAuth, AuthContext
 from app.config import get_settings
+from app.ingestion.documents import SUPPORTED, UploadRejected, create_upload_document
 from app.ingestion.fetch import Resolver, UnsafeURLError, system_resolver, validate_url
 from app.ingestion.queue import JobQueue, get_job_queue
 from app.ingestion.storage import FileStorage, get_storage
@@ -18,15 +17,6 @@ from app.schemas import DocumentFromURL, DocumentOut
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["documents"])
-
-UPLOAD_TYPES = {
-    ".pdf": "pdf",
-    ".md": "markdown",
-    ".markdown": "markdown",
-    ".txt": "text",
-    ".csv": "csv",
-}
-SUPPORTED = "PDF (.pdf), Markdown (.md), plain text (.txt) or CSV (.csv)"
 
 
 def get_url_resolver() -> Resolver:
@@ -82,62 +72,17 @@ async def upload_document(
     file: Annotated[UploadFile, File(description=SUPPORTED)],
     title: Annotated[str | None, Form(max_length=300)] = None,
 ):
-    filename = PurePath(file.filename or "").name
-    source_type = UPLOAD_TYPES.get(PurePath(filename).suffix.lower())
-    if source_type is None:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Unsupported file type {filename!r}. Upload {SUPPORTED}.",
-        )
     max_bytes = get_settings().max_upload_bytes
-    data = await file.read(max_bytes + 1)
-    if len(data) > max_bytes:
-        raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail=f"File is larger than the {max_bytes // (1024 * 1024)} MB limit",
-        )
-    if not data.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty")
-    if source_type == "pdf" and not data.startswith(b"%PDF-"):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="File is not a valid PDF"
-        )
-    if source_type != "pdf":
-        try:
-            data.decode("utf-8-sig")
-        except UnicodeDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="Text, Markdown and CSV files must be UTF-8 encoded",
-            ) from None
-
-    content_hash = hashlib.sha256(data).hexdigest()
-    duplicate = (Document.content_hash == content_hash, Document.source_type != "url")
-    if existing := await _existing(auth, *duplicate):
-        response.status_code = status.HTTP_200_OK
-        return existing
-
-    document = Document(
-        title=(title or "").strip() or PurePath(filename).stem or filename,
-        source_type=source_type,
-        source_uri=filename,
-        content_hash=content_hash,
-    )
-    auth.db.add(document)
+    data = await file.read(max_bytes + 1)  # one byte over is enough to reject
     try:
-        await auth.db.flush()
-    except IntegrityError:
-        # A concurrent upload of the same content won the race.
-        await auth.db.rollback()
+        document, created = await create_upload_document(
+            auth.db, storage, file.filename or "", data, title
+        )
+    except UploadRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    if not created:
         response.status_code = status.HTTP_200_OK
-        return await _existing(auth, *duplicate)
-
-    await storage.save(auth.tenant_id, document.id, source_type, data)
-    try:
-        await auth.db.commit()
-    except Exception:
-        await storage.delete(auth.tenant_id, document.id, source_type)
-        raise
+        return document
     await _enqueue(auth, queue, document)
     return document
 

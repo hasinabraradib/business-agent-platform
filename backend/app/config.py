@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +31,24 @@ class Settings(BaseSettings):
     url_fetch_max_bytes: int = 5 * 1024 * 1024
     url_fetch_timeout_seconds: float = 20.0
     ingest_job_timeout_seconds: int = 600
+
+    # Retrieval
+    rrf_k: int = 60  # Reciprocal Rank Fusion constant
+    retrieval_candidates: int = 30  # depth of each ranking (vector, keyword) before fusion
+    rerank_candidates: int = 15  # fused results sent to the reranker
+    # Minimum top vector similarity for has_relevant_context. Empty: the embedding provider's
+    # suggested value (similarities are model-specific).
+    relevance_threshold: float | None = None
+    query_embedding_cache_ttl_seconds: int = 24 * 3600
+    # pgvector HNSW: keep scanning until enough rows pass the tenant filter (off|strict_order|
+    # relaxed_order), and the candidate list size per scan step.
+    hnsw_iterative_scan: str = "relaxed_order"
+    hnsw_ef_search: int = 100
+
+    @field_validator("relevance_threshold", mode="before")
+    @classmethod
+    def _empty_threshold_means_default(cls, value: object) -> object:
+        return None if value == "" else value
 
 
 @lru_cache

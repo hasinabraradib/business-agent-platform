@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nodi Kitchen · নদী কিচেন · Dhanmondi, Dhaka</title>
+<style>
+  :root {
+    --clay: #b5432f; --clay-deep: #7f2a1c; --saffron: #e9a23b; --cream: #fbf3e7; --ink: #2b1a14;
+    --muted: #6b5148; color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cream); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Bengali", sans-serif; }
+  .serif { font-family: Georgia, "Times New Roman", "Noto Serif Bengali", serif; }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px clamp(20px, 5vw, 64px); }
+  .brand { font-size: 22px; font-weight: 700; letter-spacing: .01em; }
+  .brand small { display: block; font-size: 13px; font-weight: 400; color: var(--muted); }
+  nav a { color: var(--ink); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 32px; align-items: center;
+    margin: 8px clamp(16px, 4vw, 48px) 0; padding: clamp(32px, 6vw, 72px);
+    border-radius: 32px; color: #fff8ef;
+    background: radial-gradient(circle at 85% 20%, rgba(233,162,59,.55), transparent 45%),
+                linear-gradient(135deg, var(--clay) 0%, var(--clay-deep) 100%); }
+  .eyebrow { text-transform: uppercase; letter-spacing: .14em; font-size: 12px; opacity: .85; }
+  h1 { font-size: clamp(36px, 5.5vw, 60px); line-height: 1.05; margin: 12px 0 16px; }
+  .hero p { font-size: 18px; line-height: 1.6; max-width: 32em; opacity: .92; }
+  .cta { display: inline-block; margin-top: 18px; padding: 14px 24px; border-radius: 999px;
+    background: #fff8ef; color: var(--clay-deep); font-weight: 650; text-decoration: none; }
+  .plate { aspect-ratio: 1; border-radius: 50%; position: relative; max-width: 360px; justify-self: center; width: 100%;
+    background: radial-gradient(circle, #fffaf2 0 46%, #f1e3cf 47% 62%, #fffaf2 63% 70%, transparent 71%); }
+  .plate::before { content: ""; position: absolute; inset: 24%; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #f6c96b 0 18%, transparent 19%),
+                radial-gradient(circle at 62% 58%, #c9622e 0 16%, transparent 17%),
+                radial-gradient(circle at 40% 68%, #8a9a3b 0 9%, transparent 10%),
+                radial-gradient(circle, #f3d9a4 0 100%); }
+  .leaf { position: absolute; width: 70px; height: 34px; border-radius: 70px 0; background: #6f8a2f; transform: rotate(-30deg); right: 8%; top: 10%; }
+  section { padding: 56px clamp(20px, 5vw, 64px); }
+  h2 { font-size: 30px; margin: 0 0 8px; }
+  .lead { color: var(--muted); margin: 0 0 28px; }
+  .dishes { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .dish { background: #fff; border-radius: 22px; padding: 22px; box-shadow: 0 14px 30px -20px rgba(43,26,20,.35); }
+  .dish .bn { color: var(--muted); font-size: 15px; }
+  .dish strong { display: block; font-size: 19px; margin-bottom: 2px; }
+  .price { margin-top: 12px; display: inline-block; padding: 4px 12px; border-radius: 999px; background: #f7e3c4; color: var(--clay-deep); font-weight: 650; font-size: 14px; }
+  .info { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: #fff; border-radius: 22px; padding: 24px; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card p { margin: 0; color: var(--muted); line-height: 1.6; }
+  footer { padding: 32px clamp(20px, 5vw, 64px) 96px; color: var(--muted); font-size: 14px; }
+  .demo-setup-note { position: fixed; left: 16px; right: 16px; bottom: 16px; padding: 14px 18px; border-radius: 16px; background: #111; color: #fff; font-size: 14px; }
+  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } .plate { max-width: 240px; } nav a { display: none; } }
+</style>
+</head>
+<body>
+<nav>
+  <div class="brand serif">Nodi Kitchen <small>নদী কিচেন · Dhanmondi, Dhaka</small></div>
+  <div><a href="#menu">Menu</a><a href="#visit">Visit</a><a href="#visit">Reservations</a></div>
+</nav>
+<header class="hero">
+  <div>
+    <div class="eyebrow">Home-style Bengali cooking</div>
+    <h1 class="serif">River fish, slow-cooked kacchi, and mustard oil done right.</h1>
+    <p>Spices ground every morning, hilsa when the river allows, and mishti doi set in clay pots. Ask Nodi, our assistant, anything — in English, বাংলা or Banglish.</p>
+    <a class="cta" href="#menu">See today's favourites</a>
+  </div>
+  <div class="plate" aria-hidden="true"><span class="leaf"></span></div>
+</header>
+<section id="menu">
+  <h2 class="serif">Kitchen favourites</h2>
+  <p class="lead">A few of the dishes guests come back for.</p>
+  <div class="dishes">
+    <article class="dish"><strong>Kacchi Biryani</strong><span class="bn">কাচ্চি বিরিয়ানি</span><div class="price">৳480</div></article>
+    <article class="dish"><strong>Shorshe Ilish</strong><span class="bn">সর্ষে ইলিশ</span><div class="price">৳650</div></article>
+    <article class="dish"><strong>Morog Polao</strong><span class="bn">মোরগ পোলাও</span><div class="price">৳380</div></article>
+    <article class="dish"><strong>Mishti Doi</strong><span class="bn">মিষ্টি দই</span><div class="price">৳120</div></article>
+  </div>
+</section>
+<section id="visit">
+  <div class="info">
+    <div class="card"><h3>Opening hours</h3><p>Every day, noon to 11 pm. Fridays from 2:30 pm, after Jumu'ah.</p></div>
+    <div class="card"><h3>Find us</h3><p>House 27, Road 9/A, Dhanmondi — first floor, above the pharmacy.</p></div>
+    <div class="card"><h3>Reservations</h3><p>Call 01700-000000, 11 am to 10 pm. Groups of eight or more need a deposit.</p></div>
+  </div>
+</section>
+<footer>© 2026 Nodi Kitchen — an invented restaurant for this demo.</footer>
+<script src="../config.local.js"></script>
+<script src="../embed.js" data-tenant="demo-restaurant"></script>
+</body>
+</html>

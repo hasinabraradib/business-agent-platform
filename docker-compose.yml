@@ -55,6 +55,7 @@ services:
     volumes:
       - uploads:/data/uploads
       - ./demo:/demo:ro  # demo knowledge for `python -m app.cli seed-demo`
+      - ./web/demo:/site  # seed-demo --demo-config writes the git-ignored page config here
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,10 +69,12 @@ services:
       <<: *ingest-env
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      WIDGET_DIST_DIR: /widget
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       - uploads:/data/uploads
+      - ./web/widget/dist:/widget:ro  # widget.js, built by `npm run build` in web/widget
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,6 +99,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+
+  # Static demo websites embedding the widget, on their own origin (http://localhost:8080).
+  # Reuses the backend image (Python's built-in file server), so no extra image is pulled.
+  demo:
+    build: ./backend
+    command: python -m http.server 8080 --directory /site --bind 0.0.0.0
+    ports:
+      - "${DEMO_PORT:-8080}:8080"
+    volumes:
+      - ./web/demo:/site:ro
 
 volumes:
   postgres-data:

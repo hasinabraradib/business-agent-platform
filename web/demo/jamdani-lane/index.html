@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jamdani Lane · Handloom from Bangladesh</title>
+<style>
+  :root { --indigo: #1f2a5a; --indigo-soft: #2e3b77; --marigold: #f2c14e; --paper: #f7f4ee; --ink: #1c1f2b; --muted: #5d6170; color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", "Noto Sans Bengali", sans-serif; }
+  .ribbon { height: 10px; background: repeating-linear-gradient(90deg, var(--indigo) 0 18px, var(--marigold) 18px 24px, #c2552d 24px 28px); }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 20px clamp(20px, 5vw, 64px); }
+  .brand { font-weight: 800; letter-spacing: .18em; text-transform: uppercase; font-size: 15px; }
+  nav a { color: var(--ink); text-decoration: none; margin-left: 22px; font-size: 15px; }
+  .bag { padding: 8px 16px; border-radius: 999px; background: var(--indigo); color: #fff !important; }
+  .hero { margin: 0 clamp(16px, 4vw, 48px); border-radius: 28px; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; background: #fff; }
+  .copy { padding: clamp(32px, 6vw, 72px); }
+  .eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: 12px; color: var(--muted); }
+  h1 { font-size: clamp(34px, 5vw, 56px); line-height: 1.05; margin: 14px 0 16px; letter-spacing: -.02em; }
+  .copy p { font-size: 18px; line-height: 1.6; color: var(--muted); max-width: 30em; }
+  .cta { display: inline-block; margin-top: 18px; padding: 14px 24px; border-radius: 999px; background: var(--indigo); color: #fff; text-decoration: none; font-weight: 650; }
+  .weave { min-height: 320px;
+    background:
+      radial-gradient(circle at 30% 30%, rgba(255,255,255,.18) 0 6px, transparent 7px) 0 0 / 46px 46px,
+      repeating-linear-gradient(45deg, transparent 0 14px, rgba(242,193,78,.85) 14px 17px, transparent 17px 30px),
+      repeating-linear-gradient(-45deg, transparent 0 14px, rgba(242,193,78,.55) 14px 16px, transparent 16px 30px),
+      linear-gradient(160deg, var(--indigo-soft), var(--indigo)); }
+  section { padding: 56px clamp(20px, 5vw, 64px); }
+  h2 { font-size: 28px; margin: 0 0 6px; letter-spacing: -.01em; }
+  .lead { color: var(--muted); margin: 0 0 28px; }
+  .products { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .product { background: #fff; border-radius: 22px; overflow: hidden; box-shadow: 0 14px 30px -22px rgba(28,31,43,.4); }
+  .swatch { height: 150px; }
+  .s1 { background: repeating-linear-gradient(90deg, #fbf7ef 0 12px, #d94b3d 12px 14px, #fbf7ef 14px 28px), #fbf7ef; }
+  .s2 { background: repeating-linear-gradient(0deg, #0f6c6a 0 8px, #12807d 8px 16px); }
+  .s3 { background: repeating-linear-gradient(45deg, #c8a46b 0 6px, #b38d55 6px 12px); }
+  .s4 { background: radial-gradient(circle, #f2c14e 0 6px, transparent 7px) 0 0 / 26px 26px, #7a2e3a; }
+  .product div.body { padding: 18px 20px 22px; }
+  .product strong { display: block; font-size: 17px; }
+  .product span { color: var(--muted); font-size: 14px; }
+  .price { display: inline-block; margin-top: 10px; padding: 4px 12px; border-radius: 999px; background: #fdf1d3; color: #6b4b00; font-weight: 650; font-size: 14px; }
+  .promise { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  .promise div { background: #fff; border-radius: 22px; padding: 22px; }
+  .promise h3 { margin: 0 0 6px; font-size: 17px; }
+  .promise p { margin: 0; color: var(--muted); line-height: 1.6; }
+  footer { padding: 28px clamp(20px, 5vw, 64px) 96px; color: var(--muted); font-size: 14px; }
+  .demo-setup-note { position: fixed; left: 16px; right: 16px; bottom: 16px; padding: 14px 18px; border-radius: 16px; background: #111; color: #fff; font-size: 14px; }
+  @media (max-width: 760px) { .hero { grid-template-columns: 1fr; } .weave { min-height: 180px; } nav a:not(.bag) { display: none; } }
+</style>
+</head>
+<body>
+<div class="ribbon" aria-hidden="true"></div>
+<nav>
+  <div class="brand">Jamdani Lane</div>
+  <div><a href="#shop">Shop</a><a href="#promise">Shipping &amp; returns</a><a class="bag" href="#shop">Bag (0)</a></div>
+</nav>
+<header class="hero">
+  <div class="copy">
+    <div class="eyebrow">Handloom from Bangladesh</div>
+    <h1>Woven slowly, worn for years.</h1>
+    <p>Dhakai jamdani, Tangail taant and nakshi kantha from the weavers and stitchers we know by name. Questions about a saree, delivery or returns? Mithila is here to help.</p>
+    <a class="cta" href="#shop">Browse the collection</a>
+  </div>
+  <div class="weave" aria-hidden="true"></div>
+</header>
+<section id="shop">
+  <h2>New on the loom</h2>
+  <p class="lead">Small batches; each piece is a little different.</p>
+  <div class="products">
+    <article class="product"><div class="swatch s1"></div><div class="body"><strong>Dhakai Jamdani Saree</strong><span>Classic motif · JL-SAR-001</span><div class="price">৳18,500</div></div></article>
+    <article class="product"><div class="swatch s2"></div><div class="body"><strong>Half-silk Jamdani</strong><span>Teal · JL-SAR-002</span><div class="price">৳12,500</div></div></article>
+    <article class="product"><div class="swatch s3"></div><div class="body"><strong>Jute Tote Bag</strong><span>Natural · JL-JUT-001</span><div class="price">৳850</div></div></article>
+    <article class="product"><div class="swatch s4"></div><div class="body"><strong>Nakshi Kantha Throw</strong><span>Hand-stitched · JL-KAN-001</span><div class="price">৳4,500</div></div></article>
+  </div>
+</section>
+<section id="promise">
+  <div class="promise">
+    <div><h3>Fast across Bangladesh</h3><p>1–2 working days in Dhaka, 3–5 days elsewhere. Free over ৳5,000.</p></div>
+    <div><h3>7-day returns</h3><p>Unused, with tags. Damaged parcels are replaced free.</p></div>
+    <div><h3>Cash on delivery</h3><p>Available on orders up to ৳15,000, or pay by bKash or card.</p></div>
+  </div>
+</section>
+<footer>© 2026 Jamdani Lane — an invented shop for this demo.</footer>
+<script src="../config.local.js"></script>
+<script src="../embed.js" data-tenant="demo-shop"></script>
+</body>
+</html>

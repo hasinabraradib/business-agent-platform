@@ -23,6 +23,7 @@ backend/app/          FastAPI app: main.py (create_app), config.py (Settings), d
   db_roles.py         the non-superuser application role (bap_app)
   ingestion/          parsers, chunking, SSRF-safe fetch, storage, queue, pipeline
   embeddings/         EmbeddingProvider interface, Gemini and fake providers, registry
+  retrieval/          Retriever (vector/keyword/hybrid/hybrid_rerank), RRF, rerankers, cache
   worker.py           arq WorkerSettings (`arq app.worker.WorkerSettings`)
 backend/alembic/      migrations (async env.py; runs as OWNER_DATABASE_URL)
 backend/tests/        pytest suite (conftest.py sets up the test database)
@@ -79,6 +80,11 @@ docker compose run --rm migrate python -m app.cli seed-demo   # repo root, insid
   test; only `test_worker_redis.py` uses the real Redis queue (database 15).
 - Code outside a request (worker, CLI ingestion) also connects as `bap_app` and uses
   `tenancy.tenant_db(...)`, so RLS applies everywhere tenant data is touched.
+- Raw SQL on tenant-owned tables (vector and full-text search) goes through
+  `TenantDB.execute_sql`, which requires a `:tenant_id` filter. Retrieval opens its own
+  `tenant_db(...)` sessions so vector and keyword search can run concurrently.
+- Keep all four retrieval modes working; later evals compare them. Rerankers must fail safe
+  (the Retriever falls back to fused order), and LLM output is validated, never trusted.
 - New embedding providers go in `app/embeddings/` only (subclass + registry entry); vectors must
   be `EMBEDDING_DIMENSIONS` long, and each chunk records its `embedding_model`.
 - Keep dependencies light and permissively licensed (MIT/BSD/Apache-2.0): no PyTorch or local

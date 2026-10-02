@@ -22,6 +22,8 @@ docker compose run --rm migrate python -m app.cli create-key --tenant rosas --ki
 
 curl -H "Authorization: Bearer bap_admin_..." localhost:8000/v1/documents
 curl -H "Authorization: Bearer bap_admin_..." -F file=@menu.csv localhost:8000/v1/documents
+curl -H "Authorization: Bearer bap_admin_..." -H 'content-type: application/json' \
+     -d '{"query": "borhani er dam koto?", "mode": "hybrid", "top_k": 5}' localhost:8000/v1/search
 ```
 
 Set `GEMINI_API_KEY` in `.env` for real embeddings; without it the stack uses deterministic
@@ -112,3 +114,50 @@ ignored. The API checks the URL when it is submitted and the worker checks it ag
 
 **Known limitation:** there is no OCR. A scanned PDF (images without a text layer) ends as
 `failed` with "no extractable text; OCR is not supported yet".
+
+## Retrieval
+
+`Retriever.retrieve(tenant_id, query, mode, top_k)` (`backend/app/retrieval/`) returns the most
+relevant chunks with their scores; `POST /v1/search` exposes it for testing a knowledge base, with
+per-stage timings. There are four modes, all kept so they can be compared on an eval set:
+
+- **vector**: the query is embedded (cached in Redis per tenant and normalized query) and
+  compared to chunk embeddings by cosine similarity. Only chunks embedded with the same model are
+  compared.
+- **keyword**: full-text match over each chunk's `tsvector`. Every query word is a separate
+  term weighted by how rare it is in the tenant's chunks (inverse document frequency), so a
+  question does not need every word to match, one rare term ("borhani") is enough, and more
+  matching terms rank higher. Common question words in English, Bengali and romanized Bengali
+  are ignored. Compound tokens such as product codes (`JL-SAR-001`) are also matched as an exact
+  phrase, so the exact code outranks its look-alikes.
+- **hybrid**: the vector and keyword rankings merged with **Reciprocal Rank Fusion**: each
+  chunk scores `sum(1 / (k + rank))` over the rankings it appears in (`RRF_K`, default 60). RRF
+  needs only ranks, so it can merge cosine similarities and keyword weights, which live on
+  unrelated scales, without calibrating one against the other. Vector search finds paraphrases
+  and cross-language matches (a Bengali question about English opening hours); keyword search
+  finds exact names and codes that embeddings blur together.
+- **hybrid_rerank**: the top 15 fused candidates are scored 0–10 by a small, cheap LLM
+  (`gemini-3.5-flash-lite`, structured JSON output, validated strictly). Any failure or timeout
+  keeps the fused order and is reported, so reranking can never make results worse than hybrid.
+
+**Why the `simple` text configuration:** content is in English and Bengali (and customers write
+romanized Bengali). Postgres has no Bengali stemmer, and an English stemmer would mangle Bengali
+and romanized words, so text is lowercased and split into words without stemming or a built-in
+stop-word list. Exact dish names, codes and Bengali words therefore match reliably; inflections
+and paraphrases are left to vector search.
+
+**The filtered index problem:** the HNSW vector index finds approximate nearest neighbours
+first and applies the tenant filter afterwards, to only the first ~`hnsw.ef_search` candidates.
+A tenant that owns a small share of the table can then get fewer than `top_k` results, or none
+(the test shows 0 of 5 for a tenant with 8 chunks next to one with 2,000). The fix has two
+layers: pgvector's **iterative index scan** (`hnsw.iterative_scan = relaxed_order`) keeps
+scanning until enough rows pass the filter, with results re-sorted by exact distance; and if the
+index still returns too few rows while the tenant has more, an **exact scan over that tenant's
+rows** fills the gap.
+
+**Confidence:** every result set includes the best vector similarity and `has_relevant_context`
+(similarity >= threshold). The chat step uses it to say "I don't know" instead of guessing. The
+starting threshold for `gemini-embedding-2` is 0.65: in a first check on the demo data,
+on-topic questions scored 0.72–0.83 and off-topic ones 0.53–0.59. Similarities are model-
+specific, so each embedding provider suggests its own value and `RELEVANCE_THRESHOLD` overrides
+it; it will be tuned against evals.

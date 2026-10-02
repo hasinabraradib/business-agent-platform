@@ -145,8 +145,8 @@ def parse_pdf(data: bytes) -> ParsedDocument:
 HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 TEXT_TAGS = {"p", "li", "pre", "blockquote", "dt", "dd", "figcaption", "caption", "tr"}
 DROP_TAGS = [
-    "script", "style", "noscript", "template", "svg", "nav", "header", "footer", "aside",
-    "form", "iframe", "button", "select",
+    "head", "title", "script", "style", "noscript", "template", "svg", "nav", "header", "footer",
+    "aside", "form", "iframe", "button", "select",
 ]  # fmt: skip
 BLOCK_TAGS = HEADING_TAGS | TEXT_TAGS | {"div", "section", "article", "main", "table", "ul", "ol"}
 
@@ -158,9 +158,10 @@ def _clean(text: str) -> str:
     return re.sub(r"(?<=[(\[]) ", "", text)
 
 
-def parse_html(html: str) -> ParsedDocument:
+def parse_html(html: str | bytes, encoding: str | None = None) -> ParsedDocument:
     """Main-text extraction: drop navigation and boilerplate, keep headings and paragraphs."""
-    soup = BeautifulSoup(html, "html.parser")
+    from_encoding = encoding if isinstance(html, bytes) else None
+    soup = BeautifulSoup(html, "html.parser", from_encoding=from_encoding)
     title = _clean(soup.title.get_text()) if soup.title else None
     for tag in soup(DROP_TAGS):
         tag.decompose()

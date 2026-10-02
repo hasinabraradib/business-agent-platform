@@ -170,56 +170,99 @@ it; it will be tuned against evals.
 accepts a widget key (from a website) or an admin key:
 
 ```json
-{"conversation_id": null, "visitor_id": "v-123", "message": "How much is the Kacchi Biryani?", "stream": true}
+{"conversation_id": null, "visitor_id": "v-123", "message": "kacchi koto?",
+ "client_message_id": "3f2c9a…", "stream": true}
 ```
 
 With `stream: true` it sends Server-Sent Events: `token` events with the reply text, then
-`citations`, then `done` (message id, conversation id, outcome, token usage). If generation fails
-it sends one `error` event instead. `stream: false` returns the whole reply as one JSON object.
-`GET /v1/conversations` and `GET /v1/conversations/{id}` (admin key) list conversations and show
-their messages with citations, outcomes, timings and retrieval details.
+`citations`, then `done` (message id, conversation id, outcome, token usage and timings, including
+time to first token). If generation fails it sends one `error` event instead. `stream: false`
+returns the whole reply as one JSON object. `client_message_id` makes retries idempotent:
+resending the same id never stores the message twice, and if the first attempt already finished,
+the stored reply is returned again (`replayed`). `GET /v1/conversations` and
+`GET /v1/conversations/{id}` (admin key) list conversations and show messages with citations,
+outcomes, searches, timings and the model that answered.
 
-**Pipeline** (`backend/app/chat/`):
-1. Load the last few turns of the conversation.
-2. If there is history, a small, cheap model (`gemini-3.5-flash-lite`) rewrites the message
-   into a standalone search query ("and is it spicy?" → "is Kacchi Biryani spicy"). First
-   messages skip this. A rewrite that fails, or that just repeats an earlier question, is
-   discarded and the original message is searched.
-3. Retrieve with mode `hybrid`, top 8 (`CHAT_RETRIEVAL_MODE=hybrid_rerank` turns the reranker
-   on).
-4. The context counts as relevant if the best vector similarity clears the threshold **or**
-   keyword search found a strong exact match (an exact product code, or every word of the
-   question including a rare one). Otherwise the model receives no passages at all.
-5. Generate the answer with `gemini-3.8-flash` (Google's default general-purpose model), from
-   the provided passages only. Overload and rate-limit errors that arrive before any text has
-   been streamed are retried, then `CHAT_FALLBACK_MODEL` (`gemini-3.6-flash`) is tried.
+**The tool loop** (`backend/app/chat/`). Each customer message is one tool-calling turn, not
+"always search, then answer". The chat model gets the recent conversation and a
+`search_knowledge(query)` tool, and decides for itself:
+- **Replies directly, with no search,** to greetings, thanks, small talk, clarifying questions,
+  and follow-ups already answered in the conversation. Sources cited in the last two replies
+  are offered up front as numbered "earlier sources", so "ota ki jhal?" after a price question
+  can be answered and cited without searching again.
+- **Calls `search_knowledge`** when it needs a fact about the business, and writes the query
+  itself (e.g. "Kacchi Biryani price spice"). No separate rewrite step, so no extra model call.
+  Search is hybrid, top 8 (`CHAT_RETRIEVAL_MODE=hybrid_rerank` turns the reranker on). A result
+  counts as relevant if the similarity clears the threshold or keyword search found a strong
+  exact match.
+- **At most 2 searches per message** (`CHAT_MAX_SEARCHES`). After that, the model gets no tool
+  and must answer with what it has.
+- **The registry is the extension point:** tools live in a `ToolRegistry`, so reservations,
+  order lookup and lead capture can be added as more tools.
 
-**Answer rules.** The system prompt enforces these, and code checks them:
-- Answer only from the passages. If the answer is not there, say so and offer the business's
-  contact. Never invent prices, hours, policies or stock. *Code check:* when the context is not
-  relevant, no passages are sent, so there is nothing to cite. A "don't know" reply that lacks
-  the fallback contact gets it appended.
-- Reply in the customer's language and script (English, Bengali, or romanized Bengali). *Code
-  check:* a script mismatch is recorded on the message.
-- Greetings and thanks get a short friendly reply.
-- Cite with `[n]` markers that refer to the numbered passages. *Code check:* a streaming filter
-  drops any marker that does not match a passage actually provided, even when a marker arrives
-  split across chunks. The customer never sees an invalid citation.
-- Customer messages, history and retrieved passages are data, not instructions. *In the
-  prompt:* they sit inside tags whose names carry a random per-request nonce, so text cannot
-  close a tag and pose as instructions.
-- The assistant's name, business name, tone, fallback contact, allowed origins and daily cap
-  come from tenant settings (`tenants.settings`).
+**Grounding and outcomes.** Every fact about the business (prices, hours, policies, stock,
+location) must come from a search result or earlier source in this conversation, and is cited
+`[n]`. A streaming filter drops any marker that matches no source actually found. If a search
+finds nothing relevant, the reply says so and includes the fallback contact (code appends it if
+the model left it out). The outcome is decided in code from what can be verified:
+- **`answered`:** the reply cites at least one real source.
+- **`no_answer`:** a search was made but nothing was cited (nothing relevant, or an ungrounded
+  reply), the model reported it could not help (off-topic, or a booking it can't make), or it
+  claimed an answer with nothing to verify it. These feed the knowledge-gaps report.
+- **`smalltalk`:** no search and no claim.
+- **`error`:** generation failed.
 
-**How outcomes are decided.** Each assistant message is stored as `answered`, `no_answer`
-(feeds the knowledge-gaps report) or `smalltalk`, or `error` when generation failed. The model
-starts its reply with a hidden tag (`[[answered]]`, `[[no_answer]]` or `[[smalltalk]]`), which
-is stripped before streaming, because only the model reliably recognises a greeting in any
-language or script. Code then decides what can be verified: a reply is `answered` only if it
-cites at least one passage that was actually provided. `smalltalk` is taken from the model's tag
-when it cited nothing. Everything else, including a missing tag or a claimed answer without a
-citation, is `no_answer`. So an `answered` message always traces back to the knowledge base, and
-a confident-sounding reply without support is counted as a gap.
+The model's hidden status tag (`[[answered]]`, `[[no_answer]]`, `[[smalltalk]]`, stripped
+before streaming) is used only where code cannot decide: smalltalk versus a polite "can't help"
+when nothing was searched or cited.
+
+**Time awareness.** Each tenant has a `timezone` (the demo tenants use `Asia/Dhaka`). Every turn,
+the system prompt states the business's current local date, weekday and time, e.g. "Saturday, 3
+October 2026, 7:30 PM (Asia/Dhaka)". For "are you open now?" the model searches the opening
+hours, compares them with that time, and answers plainly ("Yes, we're open until 11 pm
+tonight").
+
+**Voice.** The prompt asks for a friendly staff member texting a customer:
+- Short and warm: one to three sentences unless a list is needed.
+- No "As an AI", no "based on the information provided", no "How else can I assist you?"
+  closings, no restating the question.
+- Replies in the customer's language and script. Romanized Bengali gets natural Banglish back,
+  the way people in Dhaka text (e.g. "Ji, amra ekhon khola, raat 11 ta porjonto."), not stiff
+  transliteration.
+- It doesn't volunteer that it is an AI. If a customer sincerely asks whether they are talking
+  to a person or a bot, it says briefly that it is the business's virtual assistant and offers
+  the human contact. It never claims to be human.
+- Tone and extra instructions are per-tenant settings (`tone`, `instructions`).
+
+Customer messages, search results and earlier sources sit inside tags whose names carry a random
+per-turn nonce, and the prompt treats them as data, never as instructions.
+
+**Models, failover and latency.** `CHAT_MODELS` lists `provider:model` candidates in order. The
+default is `gemini-3.8-flash` (Google's default general-purpose model) with `gemini-3.6-flash` as
+fallback. Setting `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY` and `OPENAI_COMPAT_MODEL`
+adds any OpenAI-compatible endpoint as a cross-provider fallback (streaming and tool calls
+supported). Embeddings stay on Gemini only, because vectors from different models are not
+comparable.
+- **Fast failover:** if a model returns overload or rate-limit errors, or produces no token or
+  tool call within `CHAT_FAILOVER_SECONDS` (3 s), the next candidate is tried at once. The
+  failed model is skipped for a minute (`CHAT_COOLDOWN_SECONDS`), so the following turns don't
+  pay the same delay. Once a model has started streaming it is never switched silently.
+- **Recorded model:** the stored message records the model that actually answered.
+- **Thinking:** each request uses the model's lowest thinking level (3.8-flash: low; 3.6-flash:
+  minimal).
+- **Targets:** under 2.5 s to first token for a direct reply, under 4 s for one that searches.
+  A searching reply needs two model calls plus one search, so the query embedding (cached per
+  tenant and question in Redis) and the model's own first-token time dominate.
+
+Measured so far:
+- **Pipeline overhead, offline** (fake model and embeddings, measured from the start of the turn
+  to the first token): about 0.1 ms for a direct reply, and 3 ms (max 5 ms) for a reply that
+  searches. Real latency is therefore almost entirely the model's time plus the query-embedding
+  call.
+- **Real Gemini, 2026-10-03:** blocked. `gemini-3.8-flash` was overloaded (503) and the free-tier
+  daily quota of `gemini-3.6-flash` (20 requests) was exhausted. The failover itself worked
+  (503 → fallback in milliseconds → clean apology in 1.8 s), but no answer timings could be
+  measured. Re-run `evals/chat_script.py` once quota is available.
 
 **Protections for the public endpoint** (widget keys are visible in websites):
 - **Allowed origins:** widget requests must come from one of the tenant's `allowed_origins`.

@@ -38,10 +38,15 @@ GREETING = re.compile(
 )
 
 
+CUSTOMER_BLOCK = re.compile(r"<customer-message-(\w+)>\n(.*)\n</customer-message-\1>", re.S)
+
+
 def last_user_text(request: ChatRequest) -> str:
+    """The latest customer message (unwrapped from the chat prompt's delimiter tags)."""
     for message in reversed(request.messages):
         if message.role == "user":
-            return message.text.strip()
+            block = CUSTOMER_BLOCK.search(message.text)
+            return (block.group(2) if block else message.text).strip()
     return ""
 
 

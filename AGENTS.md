@@ -24,8 +24,10 @@ backend/app/          FastAPI app: main.py (create_app), config.py (Settings), d
   ingestion/          parsers, chunking, SSRF-safe fetch, storage, queue, pipeline
   embeddings/         EmbeddingProvider interface, Gemini and fake providers, registry
   retrieval/          Retriever (vector/keyword/hybrid/hybrid_rerank), RRF, rerankers, cache
-  llm/                ChatProvider interface, Gemini (SSE streaming) and fake chat models
-  chat/               answer pipeline, prompts, stream filters, outcomes, rate limits
+  llm/                ChatProvider interface (tool calls), Gemini, OpenAI-compatible, fake,
+                      and ChatChain (fast failover across models/providers)
+  chat/               tool loop (service.py), ToolRegistry + search_knowledge (tools.py),
+                      prompts, stream filters, outcomes, rate limits
   worker.py           arq WorkerSettings (`arq app.worker.WorkerSettings`)
 backend/alembic/      migrations (async env.py; runs as OWNER_DATABASE_URL)
 backend/tests/        pytest suite (conftest.py sets up the test database)
@@ -92,10 +94,12 @@ cd web/widget && npm ci && npm run check   # widget: types, lint, tests, build +
   `tenant_db(...)` sessions so vector and keyword search can run concurrently.
 - Keep all four retrieval modes working; later evals compare them. Rerankers must fail safe
   (the Retriever falls back to fused order), and LLM output is validated, never trusted.
-- Chat: untrusted text (customer messages, history, passages) only ever goes inside the
-  nonce-delimited tags built in `app/chat/prompts.py`. `answered` requires a valid citation;
-  never relax `decide_outcome` without a test. Every chat run must end with exactly one done or
-  error event. Tests use `FakeChatProvider`; `conftest.py` forces `CHAT_PROVIDER=fake`.
+- Chat: untrusted text (customer messages, search results, earlier sources) only ever goes
+  inside the nonce-delimited tags built in `app/chat/prompts.py`. `answered` requires a valid
+  citation to a source found in the conversation; never relax `decide_outcome` without a test.
+  Every chat run must end with exactly one done or error event. New capabilities are tools:
+  subclass `Tool` and register it in `ToolRegistry` (wired in `app/chat/deps.py`). Tests use
+  `FakeChatProvider` (scripted tool calls); `conftest.py` forces `CHAT_PROVIDER=fake`.
 - New chat providers go in `app/llm/` only (subclass + registry entry).
 - Widget: never use `innerHTML`/`insertAdjacentHTML`; build DOM with `createElement` and
   `textContent` (`src/render.ts` for any server or model text, http/https links only). Colours,

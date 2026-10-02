@@ -303,6 +303,21 @@ async def test_strong_keyword_match_counts_as_a_relevant_search(
     assert body["outcome"] == "answered" and body["reply"] == "sku: JL-SAR-001 [1]"
 
 
+async def test_the_offline_model_works_through_the_real_prompt(
+    client, app, app_engine, cafe, retriever
+) -> None:
+    """The default fake model (offline demo) must see the customer's words, not the tags."""
+    tenant, _ = cafe
+    offline = FakeChatProvider()  # the default offline responder
+    use(app, make_service(app_engine, ChatChain([Candidate(offline, "fake-chat")]), retriever))
+    greeting = (await chat(client, tenant.admin_key, "Hi")).json()
+    assert greeting["outcome"] == "smalltalk" and retriever.queries == []
+    answer = (await chat(client, tenant.admin_key, "How much is the Kacchi Biryani?")).json()
+    assert retriever.queries == ["How much is the Kacchi Biryani?"]
+    assert answer["outcome"] == "answered"
+    assert answer["reply"] == "From what we have: dish: Kacchi Biryani [1]"
+
+
 # --- time awareness ----------------------------------------------------------------------------
 
 

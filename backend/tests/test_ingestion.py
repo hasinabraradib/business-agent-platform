@@ -144,7 +144,7 @@ async def test_upload_returns_202_pending_then_worker_makes_it_ready(
     ]
     assert rows[0].content.startswith("We are open every day")
     assert {r.tenant_id for r in rows} == {tenant.id}
-    assert {r.embedding_model for r in rows} == {"fake-hashing-768"}
+    assert {r.embedding_model for r in rows} == {"fake-hashing-768-v2"}
 
 
 async def test_duplicate_upload_returns_existing_document(

@@ -21,6 +21,9 @@ class EmbeddingProvider(ABC):
     #: Stored with every chunk; vectors from different models must never be compared.
     model_name: str
     dimensions: int = EMBEDDING_DIMENSIONS
+    #: Suggested minimum query-to-chunk cosine similarity for "relevant context". Similarity
+    #: scales differ between models, so each provider suggests its own starting point.
+    relevance_threshold: float = 0.5
 
     @abstractmethod
     async def embed_documents(self, documents: Sequence[EmbeddingInput]) -> list[list[float]]:

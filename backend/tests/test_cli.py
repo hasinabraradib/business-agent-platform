@@ -76,7 +76,7 @@ async def test_seed_demo_ingests_demo_knowledge_and_is_idempotent(
     assert first["demo-shop"][:3] == (2, 4, 4)  # products, shipping, returns, faq
     assert len(first["demo-restaurant"][3]) > 18  # 18 menu rows plus the about page
     assert len(first["demo-shop"][3]) > 14  # 14 products plus three pages
-    assert "embeddings: fake-hashing-768" in first_out
+    assert "embeddings: fake-hashing-768-v2" in first_out
 
     assert await cli.run(["seed-demo"]) == 0
     second_out = capsys.readouterr().out

@@ -25,6 +25,10 @@ RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 
 class GeminiEmbeddingProvider(EmbeddingProvider):
+    # Starting point from a quick probe of gemini-embedding-2 (2026-10): on-topic questions
+    # scored ~0.7+, unrelated text ~0.55. Tuned against evals later; RELEVANCE_THRESHOLD overrides.
+    relevance_threshold = 0.65
+
     def __init__(
         self,
         api_key: str,

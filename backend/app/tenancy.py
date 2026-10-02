@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from typing import Any, TypeVar
 
-from sqlalchemy import ColumnElement, Select, delete, func, select, text
+from sqlalchemy import ColumnElement, Result, Select, TextClause, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import Tenant, TenantOwned
@@ -78,6 +78,23 @@ class TenantDB:
             .where(model.tenant_id == self.tenant_id, *criteria)
         )
         return await self._session.scalar(statement) or 0
+
+    async def set_local(self, settings: dict[str, str]) -> None:
+        """Set Postgres settings for the current transaction only (e.g. hnsw.ef_search)."""
+        for name, value in settings.items():
+            await self._session.execute(
+                text("SELECT set_config(:name, :value, true)"), {"name": name, "value": value}
+            )
+
+    async def execute_sql(self, statement: TextClause, params: dict[str, Any]) -> Result[Any]:
+        """Run raw SQL that must filter by :tenant_id; the parameter is filled in here.
+
+        For queries the ORM cannot express (vector and full-text search). Refuses SQL without a
+        :tenant_id parameter, so the application-layer filter cannot be forgotten.
+        """
+        if "tenant_id" not in statement._bindparams:
+            raise ValueError("Tenant-scoped SQL must filter on :tenant_id")
+        return await self._session.execute(statement, {**params, "tenant_id": self.tenant_id})
 
     async def scalars(self, statement: Select[tuple[T]]) -> list[T]:
         return list((await self._session.scalars(statement)).all())

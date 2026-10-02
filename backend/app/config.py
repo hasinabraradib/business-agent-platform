@@ -46,6 +46,17 @@ class Settings(BaseSettings):
     hnsw_ef_search: int = 100
     strong_keyword_min_idf: float = 1.5
 
+    # Chat
+    chat_retrieval_mode: str = "hybrid"  # hybrid_rerank switches the reranker on
+    chat_top_k: int = 8
+    chat_history_messages: int = 6
+    chat_first_token_timeout_seconds: float = 25.0
+    chat_total_timeout_seconds: float = 90.0
+    # Public-endpoint protection (widget keys are embedded in websites).
+    chat_rate_per_key_per_minute: int = 60
+    chat_rate_per_visitor_per_minute: int = 10
+    chat_daily_message_cap: int = 2000  # per tenant; tenant settings may set a lower/higher cap
+
     @field_validator("relevance_threshold", mode="before")
     @classmethod
     def _empty_threshold_means_default(cls, value: object) -> object:

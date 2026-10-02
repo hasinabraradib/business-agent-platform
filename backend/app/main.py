@@ -1,11 +1,12 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 
+from app.chat.deps import get_chat_service, get_rate_limiter
 from app.ingestion.queue import get_job_queue
 from app.retrieval import get_retriever
-from app.routers import api_keys, documents, health, search, tenant
+from app.routers import api_keys, chat, conversations, documents, health, search, tenant
 
 
 @asynccontextmanager
@@ -18,6 +19,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await retriever.embedder.aclose()
         if hasattr(retriever.cache, "aclose"):
             await retriever.cache.aclose()
+    if get_chat_service.cache_info().currsize:
+        await get_chat_service().provider.aclose()
+    if get_rate_limiter.cache_info().currsize:
+        await get_rate_limiter().aclose()
 
 
 def create_app() -> FastAPI:
@@ -29,7 +34,20 @@ def create_app() -> FastAPI:
     v1.include_router(api_keys.router)
     v1.include_router(documents.router)
     v1.include_router(search.router)
+    v1.include_router(chat.router)
+    v1.include_router(conversations.router)
     app.include_router(v1)
+
+    @app.middleware("http")
+    async def widget_cors(request: Request, call_next):
+        # Set by the chat route only after the Origin passed the tenant's allow-list.
+        response = await call_next(request)
+        if origin := getattr(request.state, "cors_origin", None):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Expose-Headers"] = "Retry-After"
+            response.headers["Vary"] = "Origin"
+        return response
+
     return app
 
 

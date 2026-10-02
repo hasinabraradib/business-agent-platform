@@ -101,3 +101,64 @@ class SearchResponse(BaseModel):
     embedding_cached: bool
     reranker: SearchReranker | None
     timings_ms: dict[str, float]
+
+
+MAX_CHAT_MESSAGE_CHARS = 2000
+
+
+class ChatRequestBody(BaseModel):
+    conversation_id: uuid.UUID | None = None
+    # Chosen by the widget (a random id kept in the visitor's browser).
+    visitor_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    message: str = Field(min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
+    stream: bool = True
+
+
+class Citation(BaseModel):
+    marker: int
+    chunk_id: uuid.UUID
+    document_id: uuid.UUID
+    document_title: str
+    metadata: dict[str, Any]
+    snippet: str
+
+
+class ChatResponseBody(BaseModel):
+    conversation_id: uuid.UUID
+    message_id: uuid.UUID | None
+    reply: str
+    outcome: str
+    citations: list[Citation]
+    usage: dict[str, int]
+    timings: dict[str, float]
+    retrieval: dict[str, Any] | None
+    error: str | None = None
+
+
+class ConversationOut(ORMModel):
+    id: uuid.UUID
+    channel: str
+    visitor_id: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+
+class MessageOut(ORMModel):
+    id: uuid.UUID
+    role: str
+    content: str
+    citations: list[dict[str, Any]]
+    outcome: str | None
+    model: str | None
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    timings: dict[str, Any]
+    retrieval: dict[str, Any] | None
+    error: str | None
+    created_at: datetime
+
+
+class ConversationDetail(ConversationOut):
+    messages: list[MessageOut]

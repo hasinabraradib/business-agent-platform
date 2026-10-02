@@ -25,20 +25,33 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot: provisions the non-superuser app role and applies migrations as the owner role.
+  # Also the place to run the platform CLI: docker compose run --rm migrate python -m app.cli ...
+  migrate:
+    build: ./backend
+    command: sh -c "python -m app.cli ensure-app-role && alembic upgrade head"
+    environment:
+      OWNER_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-app}
+      DATABASE_URL: postgresql+asyncpg://bap_app:${APP_DB_PASSWORD:-bap_app}@postgres:5432/${POSTGRES_DB:-app}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # The API holds only the app-role credentials, so Row-Level Security always applies to it.
   api:
     build: ./backend
-    # Apply migrations, then serve. Fine for local dev; production runs migrations as a separate step.
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     environment:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-app}
+      DATABASE_URL: postgresql+asyncpg://bap_app:${APP_DB_PASSWORD:-bap_app}@postgres:5432/${POSTGRES_DB:-app}
       REDIS_URL: redis://redis:6379/0
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 

@@ -27,8 +27,11 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app
-      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app_test
+      # The API/tests connect as the non-superuser app role (created by the test setup), so RLS
+      # applies; migrations and the CLI use the owner role.
+      DATABASE_URL: postgresql+asyncpg://bap_app:ci-app-password@localhost:5432/app
+      OWNER_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/app
+      TEST_DATABASE_NAME: app_test
 
     steps:
       - uses: actions/checkout@v4

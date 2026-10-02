@@ -14,8 +14,12 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "INFO"
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app"
-    test_database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app_test"
+    # The API connects as the non-superuser application role, so Row-Level Security applies.
+    database_url: str = "postgresql+asyncpg://bap_app:bap_app@localhost:5432/app"
+    # Migrations and the platform CLI connect as the owner role (bypasses RLS).
+    owner_database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app"
+    # Tests use the same servers and roles, but this database name instead.
+    test_database_name: str = "app_test"
     db_connect_timeout_seconds: float = 5.0
 
     redis_url: str = "redis://localhost:6379/0"

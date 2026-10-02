@@ -6,6 +6,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
+from app import models  # noqa: F401  (registers models on Base.metadata)
 from app.config import get_settings
 from app.db import Base
 
@@ -14,9 +15,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Callers (e.g. the test suite) may set sqlalchemy.url explicitly; otherwise use DATABASE_URL.
+# Migrations run as the owner role. Callers (e.g. tests) may set sqlalchemy.url explicitly.
 if not config.get_main_option("sqlalchemy.url"):
-    config.set_main_option("sqlalchemy.url", get_settings().database_url)
+    config.set_main_option("sqlalchemy.url", get_settings().owner_database_url)
 
 target_metadata = Base.metadata
 

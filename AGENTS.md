@@ -5,6 +5,7 @@ Conventions for coding sessions (human or AI) working in this repository.
 ## Stack
 
 - Backend: Python 3.12, FastAPI, SQLAlchemy 2.0 async (asyncpg), Alembic, pydantic-settings
+- Ingestion: arq worker on Redis, pypdf, BeautifulSoup, httpx; embeddings from an API (Gemini)
 - Data: PostgreSQL 16 with pgvector, Redis 7
 - Tooling: uv (dependencies, `backend/uv.lock`), Ruff (lint + format), pytest + httpx
 - Frontend (later): Next.js + TypeScript in `web/`
@@ -20,23 +21,28 @@ backend/app/          FastAPI app: main.py (create_app), config.py (Settings), d
   security.py         API key generation and hashing
   tenants.py, cli.py  tenant provisioning and the platform CLI (owner role)
   db_roles.py         the non-superuser application role (bap_app)
+  ingestion/          parsers, chunking, SSRF-safe fetch, storage, queue, pipeline
+  embeddings/         EmbeddingProvider interface, Gemini and fake providers, registry
+  worker.py           arq WorkerSettings (`arq app.worker.WorkerSettings`)
 backend/alembic/      migrations (async env.py; runs as OWNER_DATABASE_URL)
 backend/tests/        pytest suite (conftest.py sets up the test database)
 web/                  frontend (placeholder)
 evals/                assistant evaluations (placeholder)
+demo/                 fictional demo knowledge ingested by `seed-demo`
 ```
 
 ## Commands (run from `backend/` unless noted)
 
 ```bash
 docker compose up --build              # repo root: full stack on :8000
-docker compose up -d postgres          # repo root: just the DB, for tests
+docker compose up -d postgres redis    # repo root: what the tests need
 uv sync                                # install dependencies
 uv run ruff check . && uv run ruff format --check .
 uv run pytest                          # uses database TEST_DATABASE_NAME, never the dev DB
 uv run alembic upgrade head
 uv run alembic revision --autogenerate -m "describe change"   # then add RLS/grants by hand
-uv run python -m app.cli seed-demo     # or create-tenant --name ... --slug ...
+uv run python -m app.cli seed-demo     # or create-tenant / create-key --tenant ... --kind ...
+uv run arq app.worker.WorkerSettings   # run the ingestion worker outside Docker
 docker compose run --rm migrate python -m app.cli seed-demo   # repo root, inside Compose
 ```
 
@@ -67,4 +73,14 @@ docker compose run --rm migrate python -m app.cli seed-demo   # repo root, insid
   `auth.db` (`TenantDB`), never a raw session. `SessionDep` is for tenant-less routes like
   `/health`.
 - Never log, store or return a full API key after creation. Store only its sha256 hash.
+- **Tests never call a real AI API or the network.** `conftest.py` forces the fake embedding
+  provider and blocks DNS for non-loopback hosts; fake external services with
+  `httpx.MockTransport` and injected resolvers. The queue and file storage are replaced per
+  test; only `test_worker_redis.py` uses the real Redis queue (database 15).
+- Code outside a request (worker, CLI ingestion) also connects as `bap_app` and uses
+  `tenancy.tenant_db(...)`, so RLS applies everywhere tenant data is touched.
+- New embedding providers go in `app/embeddings/` only (subclass + registry entry); vectors must
+  be `EMBEDDING_DIMENSIONS` long, and each chunk records its `embedding_model`.
+- Keep dependencies light and permissively licensed (MIT/BSD/Apache-2.0): no PyTorch or local
+  models; disk space is limited.
 - `/live` must never touch the database; `/health` is the database-backed readiness check.

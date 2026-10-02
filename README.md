@@ -4,7 +4,7 @@ A multi-tenant AI assistant platform for small businesses. Each business (tenant
 documents, and the assistant answers customer questions from them with citations, takes actions
 through tools, and hands off to a human when needed. This repository currently contains the
 foundation: a FastAPI backend on PostgreSQL 16 (pgvector) and Redis 7 with tenants, API-key
-authentication and tenant data isolation, run locally with Docker Compose.
+authentication, tenant data isolation and document ingestion, run locally with Docker Compose.
 
 ## Run locally
 
@@ -12,25 +12,32 @@ Requires Docker and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 cp .env.example .env          # placeholder values; edit if you like
-docker compose up --build     # postgres, redis, migrate (role + migrations), api
+docker compose up --build     # postgres, redis, migrate (role + migrations), api, worker
 curl localhost:8000/health    # {"status":"ok","database":"up"}
 
-# Create tenants (prints admin keys once; store them)
+# Demo tenants with ingested demo/ knowledge (prints keys once; store them)
 docker compose run --rm migrate python -m app.cli seed-demo
 docker compose run --rm migrate python -m app.cli create-tenant --name "Rosa's Pizzeria" --slug rosas
-curl -H "Authorization: Bearer bap_admin_..." localhost:8000/v1/tenant
+docker compose run --rm migrate python -m app.cli create-key --tenant rosas --kind widget
+
+curl -H "Authorization: Bearer bap_admin_..." localhost:8000/v1/documents
+curl -H "Authorization: Bearer bap_admin_..." -F file=@menu.csv localhost:8000/v1/documents
 ```
+
+Set `GEMINI_API_KEY` in `.env` for real embeddings; without it the stack uses deterministic
+fake embeddings (fine for development, useless for search quality).
 
 API docs: http://localhost:8000/docs. If you have a database volume from before the app role
 existed, recreate it with `docker compose down -v`.
 
 ## Run the tests
 
-Tests need the Compose Postgres running. They use a separate database (`TEST_DATABASE_NAME`,
-default `app_test`) on the same server, created and migrated automatically.
+Tests need the Compose Postgres and Redis running. They use a separate database
+(`TEST_DATABASE_NAME`, default `app_test`) and Redis database 15, always use fake embeddings, and
+cannot reach the network.
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres redis
 cd backend
 uv sync
 uv run ruff check . && uv run ruff format --check .
@@ -67,3 +74,41 @@ owner role, the second layer would do nothing. The API therefore connects as a s
 non-superuser role (`bap_app`, `DATABASE_URL`) that owns nothing and has only the grants it
 needs. Migrations and the CLI use the owner role (`OWNER_DATABASE_URL`); in Compose they run in
 the one-shot `migrate` service, so the API container never has owner credentials.
+
+## Ingestion
+
+A tenant adds knowledge with `POST /v1/documents` (file upload) or `POST /v1/documents/url`.
+The API stores the source, creates the document as `pending` and returns 202 at once; a
+background worker (`arq` on Redis, the `worker` service) parses, chunks, embeds and stores it,
+then sets `ready` or `failed` with an error message. Uploading identical content again returns
+the existing document. `POST /v1/documents/{id}/reingest` rebuilds a document's chunks, and the
+new chunks replace the old ones in a single transaction, so readers never see a mix. `DELETE`
+removes the document, its chunks and its stored file.
+
+**Sources:** PDF, Markdown, plain text and CSV uploads (UTF-8, up to 10 MB), and public web pages
+(HTML main text, plain text, Markdown or PDF).
+
+**Chunking:** chunks follow the document's structure instead of fixed-size windows, because a
+chunk that mixes two topics, or stops mid-sentence, retrieves badly and reads badly when quoted.
+Prose is split by heading (a chunk never crosses into the next section), then packed from whole
+sentences (English `. ! ?` and the Bengali `।`) to about 400 tokens, preferring paragraph breaks,
+with a small overlap of whole sentences. CSV files become one chunk per row, rendered as
+`column: value` lines, so a menu item or product stays intact with its price and attributes.
+Each chunk records its section heading, page or row number and source. The embedded text is
+prefixed with the document title and section heading so a chunk makes sense on its own; the
+original text is stored unchanged. Keyword search uses Postgres's `simple` configuration
+(content is English and Bengali, and Postgres has no Bengali stemmer).
+
+**Embeddings:** `gemini-embedding-2` at 768 dimensions (`EMBEDDING_PROVIDER`, `GEMINI_API_KEY`),
+batched, with retries and exponential backoff on rate limits and transient errors. Providers
+live behind one interface in `backend/app/embeddings/`.
+
+**SSRF protection for URLs:** only `http`/`https` without credentials; the host is resolved and
+every address must be public (private, loopback, link-local, CGNAT, reserved and multicast
+ranges are refused, including IPv4-mapped IPv6); the connection is pinned to the checked address
+so DNS cannot change between check and connect; redirects are followed manually and each hop is
+checked again; responses are capped at 5 MB and 20 seconds; proxy environment variables are
+ignored. The API checks the URL when it is submitted and the worker checks it again on fetch.
+
+**Known limitation:** there is no OCR. A scanned PDF (images without a text layer) ends as
+`failed` with "no extractable text; OCR is not supported yet".

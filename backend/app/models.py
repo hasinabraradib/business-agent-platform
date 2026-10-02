@@ -2,13 +2,31 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, func, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    CheckConstraint,
+    Computed,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from app.db import Base
 
 ApiKeyKind = Literal["admin", "widget"]
+DocumentStatus = Literal["pending", "processing", "ready", "failed"]
+DOCUMENT_STATUSES: tuple[str, ...] = ("pending", "processing", "ready", "failed")
+# Fixed by the chunks.embedding column; every embedding provider must return this many dims.
+EMBEDDING_DIMENSIONS = 768
 
 
 class UUIDPrimaryKey:
@@ -66,9 +84,85 @@ class ApiKey(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
 
 class Document(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'ready', 'failed')",
+            name="documents_status_check",
+        ),
+        # Target of chunks' composite foreign key: a chunk can only point at its own tenant's
+        # document, even though foreign-key checks themselves bypass RLS.
+        UniqueConstraint("tenant_id", "id", name="documents_tenant_id_id_key"),
+        # Idempotent ingestion: identical uploaded content, or the same URL, once per tenant.
+        Index(
+            "uq_documents_tenant_content_hash",
+            "tenant_id",
+            "content_hash",
+            unique=True,
+            postgresql_where=text("source_type <> 'url' AND content_hash IS NOT NULL"),
+        ),
+        Index(
+            "uq_documents_tenant_url",
+            "tenant_id",
+            "source_uri",
+            unique=True,
+            postgresql_where=text("source_type = 'url'"),
+        ),
+    )
 
     title: Mapped[str] = mapped_column(Text, nullable=False)
+    # pdf | markdown | text | csv | url
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Original filename for uploads, the URL for web pages.
+    source_uri: Mapped[str | None] = mapped_column(Text)
+    # sha256 of the uploaded bytes (or, for URLs, of the last fetched body).
+    content_hash: Mapped[str | None] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="pending", server_default="pending"
+    )
+    error: Mapped[str | None] = mapped_column(Text)
+    chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class Chunk(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "chunks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "document_id"],
+            ["documents.tenant_id", "documents.id"],
+            ondelete="CASCADE",
+            name="chunks_document_fkey",
+        ),
+        UniqueConstraint("document_id", "chunk_index", name="chunks_document_id_chunk_index_key"),
+        Index(
+            "ix_chunks_embedding_hnsw",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+        Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
+    )
+
+    document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The original chunk text, unmodified (the embedded text adds a title/section prefix).
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # page, section, row, source. "metadata" is reserved on SQLAlchemy models, hence `meta`.
+    meta: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    embedding: Mapped[list[float]] = mapped_column(Vector(EMBEDDING_DIMENSIONS), nullable=False)
+    # Which model produced `embedding`; vectors from different models are not comparable.
+    embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
+    # 'simple' configuration: content is English and Bengali, and Postgres has no Bengali
+    # stemmer. Section headings are included so keyword search can match them.
+    tsv: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('simple'::regconfig, "
+            "coalesce(metadata->>'section', '') || ' ' || content)",
+            persisted=True,
+        ),
     )

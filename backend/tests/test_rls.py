@@ -17,10 +17,32 @@ async def _insert_tenant(conn: AsyncConnection, slug: str) -> uuid.UUID:
     )
 
 
-async def _insert_document(conn: AsyncConnection, tenant_id: uuid.UUID, title: str) -> None:
-    await conn.execute(
-        text("INSERT INTO documents (tenant_id, title, source_type) VALUES (:t, :title, 'upload')"),
+async def _insert_document(conn: AsyncConnection, tenant_id: uuid.UUID, title: str) -> uuid.UUID:
+    return await conn.scalar(
+        text(
+            "INSERT INTO documents (tenant_id, title, source_type) "
+            "VALUES (:t, :title, 'text') RETURNING id"
+        ),
         {"t": tenant_id, "title": title},
+    )
+
+
+ZERO_VECTOR = "[" + ",".join(["0"] * 768) + "]"
+
+
+async def _insert_chunk(
+    conn: AsyncConnection,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    content: str,
+    chunk_index: int = 0,
+) -> None:
+    await conn.execute(
+        text(
+            "INSERT INTO chunks (tenant_id, document_id, chunk_index, content, embedding, "
+            "embedding_model) VALUES (:t, :d, :i, :c, CAST(:e AS vector), 'test')"
+        ),
+        {"t": tenant_id, "d": document_id, "i": chunk_index, "c": content, "e": ZERO_VECTOR},
     )
 
 
@@ -36,8 +58,10 @@ async def two_tenants(owner_engine: AsyncEngine) -> tuple[uuid.UUID, uuid.UUID]:
         tenant_a = await _insert_tenant(conn, "tenant-a")
         tenant_b = await _insert_tenant(conn, "tenant-b")
         for title in ("A menu", "A hours"):
-            await _insert_document(conn, tenant_a, title)
-        await _insert_document(conn, tenant_b, "B returns policy")
+            doc_a = await _insert_document(conn, tenant_a, title)
+            await _insert_chunk(conn, tenant_a, doc_a, f"{title} chunk")
+        doc_b = await _insert_document(conn, tenant_b, "B returns policy")
+        await _insert_chunk(conn, tenant_b, doc_b, "B returns chunk")
         await conn.execute(
             text(
                 "INSERT INTO api_keys (tenant_id, kind, prefix, key_hash) "
@@ -88,13 +112,13 @@ async def test_every_tenant_owned_table_has_forced_rls_and_policy(
                 {"tables": list(tables)},
             )
         ).all()
-    assert {"api_keys", "documents"} <= tables
+    assert {"api_keys", "documents", "chunks"} <= tables
     assert {r[0] for r in rows} == tables
     for name, enabled, forced, has_policy in rows:
         assert (enabled, forced, has_policy) == (True, True, True), name
 
 
-@pytest.mark.parametrize("table", ["documents", "api_keys", "tenants"])
+@pytest.mark.parametrize("table", ["documents", "chunks", "api_keys", "tenants"])
 async def test_no_tenant_set_sees_zero_rows(app_engine: AsyncEngine, two_tenants, table) -> None:
     async with app_engine.begin() as conn:
         assert await conn.scalar(text(f"SELECT count(*) FROM {table}")) == 0
@@ -111,6 +135,8 @@ async def test_tenant_set_sees_only_its_rows_without_where(
         assert {d.tenant_id for d in docs} == {tenant_a}
         assert (await conn.scalars(text("SELECT tenant_id FROM api_keys"))).all() == [tenant_a]
         assert (await conn.scalars(text("SELECT id FROM tenants"))).all() == [tenant_a]
+        chunks = (await conn.execute(text("SELECT tenant_id, content FROM chunks"))).all()
+        assert sorted(c.content for c in chunks) == ["A hours chunk", "A menu chunk"]
 
     async with app_engine.begin() as conn:
         await _set_tenant(conn, tenant_b)
@@ -169,3 +195,40 @@ async def test_resolve_api_key_works_before_tenant_is_known(
         row = (await conn.execute(text("SELECT * FROM resolve_api_key(:h)"), {"h": "a" * 64})).one()
         assert (row.tenant_id, row.kind) == (tenant_a, "admin")
         assert (await conn.execute(text("SELECT * FROM resolve_api_key('nope')"))).all() == []
+
+
+async def test_chunk_cannot_reference_another_tenants_document(
+    app_engine: AsyncEngine, owner_engine: AsyncEngine, two_tenants
+) -> None:
+    tenant_a, tenant_b = two_tenants
+    async with owner_engine.connect() as conn:
+        doc_b = await conn.scalar(
+            text("SELECT id FROM documents WHERE tenant_id = :b"), {"b": tenant_b}
+        )
+    # Passes RLS (tenant_id is A's) but the composite foreign key rejects B's document.
+    with pytest.raises(DBAPIError, match="chunks_document_fkey"):
+        async with app_engine.begin() as conn:
+            await _set_tenant(conn, tenant_a)
+            await _insert_chunk(conn, tenant_a, doc_b, "smuggled chunk", chunk_index=99)
+
+
+async def test_deleting_document_cascades_to_its_chunks_only(
+    app_engine: AsyncEngine, owner_engine: AsyncEngine, two_tenants
+) -> None:
+    tenant_a, _ = two_tenants
+    async with app_engine.begin() as conn:
+        await _set_tenant(conn, tenant_a)
+        await conn.execute(text("DELETE FROM documents WHERE title = 'A menu'"))
+    async with owner_engine.connect() as conn:
+        remaining = (await conn.scalars(text("SELECT content FROM chunks ORDER BY 1"))).all()
+    assert remaining == ["A hours chunk", "B returns chunk"]
+
+
+async def test_keyword_index_keeps_bengali_words_whole(owner_engine: AsyncEngine) -> None:
+    # The 'simple' parser relies on the database's character classification (LC_CTYPE); a C
+    # locale would split Bengali words at vowel signs and break keyword search.
+    async with owner_engine.connect() as conn:
+        lexemes = await conn.scalar(
+            text("SELECT tsvector_to_array(to_tsvector('simple', 'কাচ্চি বিরিয়ানি Biryani'))")
+        )
+    assert sorted(lexemes) == sorted(["biryani", "কাচ্চি", "বিরিয়ানি"])

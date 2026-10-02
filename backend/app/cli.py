@@ -54,6 +54,7 @@ DEMO_TENANTS = [
                 "Assalamu alaikum! I'm Nodi. Ask me about our menu, opening hours or reservations."
             ),
             "accent_color": "#B5432F",
+            "timezone": "Asia/Dhaka",
             "suggested_questions": [
                 "What's on the menu?",
                 "Do you take reservations?",
@@ -86,6 +87,7 @@ DEMO_TENANTS = [
             "daily_message_cap": 500,
             "greeting": "Hi! I'm Mithila. Ask me about our sarees, delivery or returns.",
             "accent_color": "#F2C14E",
+            "timezone": "Asia/Dhaka",
             "suggested_questions": [
                 "How long does delivery take?",
                 "What is your return policy?",

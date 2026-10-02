@@ -30,6 +30,7 @@ class ChatChunk:
 
     text: str = ""
     usage: Usage | None = None
+    model: str | None = None  # on the final chunk: the model that actually answered
 
 
 @dataclass

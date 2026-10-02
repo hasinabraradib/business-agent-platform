@@ -101,6 +101,7 @@ class _Run:
     retrieval: dict[str, Any] = field(default_factory=dict)
     reply: list[str] = field(default_factory=list)
     usage: Usage = field(default_factory=Usage)
+    model: str | None = None  # the model that actually answered (may be the fallback)
     stored: bool = False
 
     def mark(self, stage: str, since: float) -> None:
@@ -201,6 +202,8 @@ class ChatService:
                         break
                     if chunk.usage is not None:
                         run.usage = chunk.usage
+                    if chunk.model:
+                        run.model = chunk.model
                     text = citations.feed(tags.feed(chunk.text))
                     if text:
                         if first:
@@ -322,7 +325,7 @@ class ChatService:
                 content=content,
                 citations=citations,
                 outcome=outcome,
-                model=self.provider.answer_model,
+                model=run.model or self.provider.answer_model,
                 prompt_tokens=run.usage.prompt_tokens or None,
                 completion_tokens=run.usage.completion_tokens or None,
                 timings=run.timings,

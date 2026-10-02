@@ -28,9 +28,15 @@ def _text(text: str, finish: str | None = None, **extra) -> dict:
     return {"candidates": [candidate], **extra}
 
 
+async def _no_sleep(seconds: float) -> None:
+    pass
+
+
 def _provider(handler) -> GeminiChatProvider:
     return GeminiChatProvider(
-        "test-key", client=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        "test-key",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        sleep=_no_sleep,
     )
 
 
@@ -142,3 +148,85 @@ def test_chat_provider_selection() -> None:
         get_chat_provider(LLMSettings(chat_provider="gemini"))
     with pytest.raises(ValueError, match="Unknown CHAT_PROVIDER"):
         get_chat_provider(LLMSettings(chat_provider="nope"))
+
+
+def _retrying_provider(handler, sleeps, **kwargs) -> GeminiChatProvider:
+    async def record(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    return GeminiChatProvider(
+        "test-key",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        sleep=record,
+        **kwargs,
+    )
+
+
+async def test_gemini_retries_overload_before_streaming_starts() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if len(calls) < 3:
+            return httpx.Response(503, json={"error": {"message": "high demand"}})
+        return httpx.Response(200, content=_sse(_text("Hello")))
+
+    sleeps: list[float] = []
+    provider = _retrying_provider(handler, sleeps)
+    chunks = [c async for c in provider.stream(REQUEST, model=provider.answer_model)]
+    assert "".join(c.text for c in chunks) == "Hello"
+    assert chunks[-1].model == "gemini-3.8-flash"
+    assert len(calls) == 3 and len(sleeps) == 2
+
+
+async def test_gemini_falls_back_to_the_fallback_model() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path.rsplit("/", 1)[1])
+        if "gemini-3.8-flash" in request.url.path:
+            return httpx.Response(429, json={"error": {"message": "quota"}})
+        return httpx.Response(200, content=_sse(_text("From fallback")))
+
+    provider = _retrying_provider(handler, [], max_attempts=2)
+    chunks = [c async for c in provider.stream(REQUEST, model=provider.answer_model)]
+    assert "".join(c.text for c in chunks) == "From fallback"
+    assert chunks[-1].model == "gemini-3.6-flash"
+    assert calls == [
+        "gemini-3.8-flash:streamGenerateContent",
+        "gemini-3.8-flash:streamGenerateContent",
+        "gemini-3.6-flash:streamGenerateContent",
+    ]
+
+
+async def test_gemini_gives_up_when_every_model_is_unavailable() -> None:
+    provider = _retrying_provider(
+        lambda request: httpx.Response(503, json={"error": {"message": "busy"}}), [], max_attempts=2
+    )
+    with pytest.raises(ChatError, match=r"\(503\): busy"):
+        await _collect(provider)
+
+
+async def test_gemini_helper_calls_do_not_use_the_answer_fallback() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(503, json={"error": {"message": "busy"}})
+
+    provider = _retrying_provider(handler, [], max_attempts=1)
+    with pytest.raises(ChatError):
+        await provider.complete(REQUEST, model=provider.helper_model)
+    assert len(calls) == 1
+
+
+async def test_gemini_client_errors_are_not_retried() -> None:
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(400, json={"error": {"message": "bad request"}})
+
+    with pytest.raises(ChatError, match="bad request"):
+        await _collect(_retrying_provider(handler, []))
+    assert len(calls) == 1

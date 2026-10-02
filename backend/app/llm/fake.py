@@ -60,7 +60,7 @@ class FakeChatProvider(ChatProvider):
         ):
             raise ChatError("fake model failure")
         prompt = request.system + "".join(t.text for t in request.turns)
-        yield ChatChunk(usage=Usage(len(prompt) // 4, max(1, len(script.text) // 4)))
+        yield ChatChunk(usage=Usage(len(prompt) // 4, max(1, len(script.text) // 4)), model=model)
 
     def calls_to(self, model: str) -> list[ChatRequest]:
         return [request for called, request in self.calls if called == model]

@@ -19,7 +19,12 @@ from app.llm.base import (
     Usage,
 )
 from app.llm.fake import FakeChatProvider, Scripted
-from app.llm.gemini import DEFAULT_ANSWER_MODEL, DEFAULT_HELPER_MODEL, GeminiChatProvider
+from app.llm.gemini import (
+    DEFAULT_ANSWER_MODEL,
+    DEFAULT_FALLBACK_MODEL,
+    DEFAULT_HELPER_MODEL,
+    GeminiChatProvider,
+)
 
 __all__ = [
     "ChatChunk",
@@ -49,6 +54,8 @@ class LLMSettings(BaseSettings):
     gemini_api_key: str = ""
     chat_model: str = DEFAULT_ANSWER_MODEL
     helper_model: str = DEFAULT_HELPER_MODEL
+    # Used for answers when the main model stays overloaded/rate-limited. Empty disables.
+    chat_fallback_model: str = DEFAULT_FALLBACK_MODEL
     chat_thinking_level: str = "LOW"
     helper_thinking_level: str = "MINIMAL"
 
@@ -61,6 +68,7 @@ PROVIDERS: dict[str, Callable[[LLMSettings], ChatProvider]] = {
         settings.helper_model,
         answer_thinking_level=settings.chat_thinking_level or None,
         helper_thinking_level=settings.helper_thinking_level or None,
+        fallback_model=settings.chat_fallback_model or None,
     ),
 }
 

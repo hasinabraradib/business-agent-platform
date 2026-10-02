@@ -24,6 +24,8 @@ curl -H "Authorization: Bearer bap_admin_..." localhost:8000/v1/documents
 curl -H "Authorization: Bearer bap_admin_..." -F file=@menu.csv localhost:8000/v1/documents
 curl -H "Authorization: Bearer bap_admin_..." -H 'content-type: application/json' \
      -d '{"query": "borhani er dam koto?", "mode": "hybrid", "top_k": 5}' localhost:8000/v1/search
+curl -N -H "Authorization: Bearer bap_admin_..." -H 'content-type: application/json' \
+     -d '{"visitor_id": "v1", "message": "How much is the Kacchi Biryani?"}' localhost:8000/v1/chat
 ```
 
 Set `GEMINI_API_KEY` in `.env` for real embeddings; without it the stack uses deterministic
@@ -161,3 +163,72 @@ starting threshold for `gemini-embedding-2` is 0.65: in a first check on the dem
 on-topic questions scored 0.72–0.83 and off-topic ones 0.53–0.59. Similarities are model-
 specific, so each embedding provider suggests its own value and `RELEVANCE_THRESHOLD` overrides
 it; it will be tuned against evals.
+
+## Chat
+
+`POST /v1/chat` answers a customer's question from the tenant's knowledge, with citations. It
+accepts a widget key (from a website) or an admin key:
+
+```json
+{"conversation_id": null, "visitor_id": "v-123", "message": "How much is the Kacchi Biryani?", "stream": true}
+```
+
+With `stream: true` it sends Server-Sent Events: `token` events with the reply text, then
+`citations`, then `done` (message id, conversation id, outcome, token usage). If generation fails
+it sends one `error` event instead. `stream: false` returns the whole reply as one JSON object.
+`GET /v1/conversations` and `GET /v1/conversations/{id}` (admin key) list conversations and show
+their messages with citations, outcomes, timings and retrieval details.
+
+**Pipeline** (`backend/app/chat/`):
+1. Load the last few turns of the conversation.
+2. If there is history, a small, cheap model (`gemini-3.5-flash-lite`) rewrites the message
+   into a standalone search query ("and is it spicy?" → "is Kacchi Biryani spicy"). First
+   messages skip this. A rewrite that fails, or that just repeats an earlier question, is
+   discarded and the original message is searched.
+3. Retrieve with mode `hybrid`, top 8 (`CHAT_RETRIEVAL_MODE=hybrid_rerank` turns the reranker
+   on).
+4. The context counts as relevant if the best vector similarity clears the threshold **or**
+   keyword search found a strong exact match (an exact product code, or every word of the
+   question including a rare one). Otherwise the model receives no passages at all.
+5. Generate the answer with `gemini-3.8-flash` (Google's default general-purpose model), from
+   the provided passages only. Overload and rate-limit errors that arrive before any text has
+   been streamed are retried, then `CHAT_FALLBACK_MODEL` (`gemini-3.6-flash`) is tried.
+
+**Answer rules.** The system prompt enforces these, and code checks them:
+- Answer only from the passages. If the answer is not there, say so and offer the business's
+  contact. Never invent prices, hours, policies or stock. *Code check:* when the context is not
+  relevant, no passages are sent, so there is nothing to cite. A "don't know" reply that lacks
+  the fallback contact gets it appended.
+- Reply in the customer's language and script (English, Bengali, or romanized Bengali). *Code
+  check:* a script mismatch is recorded on the message.
+- Greetings and thanks get a short friendly reply.
+- Cite with `[n]` markers that refer to the numbered passages. *Code check:* a streaming filter
+  drops any marker that does not match a passage actually provided, even when a marker arrives
+  split across chunks. The customer never sees an invalid citation.
+- Customer messages, history and retrieved passages are data, not instructions. *In the
+  prompt:* they sit inside tags whose names carry a random per-request nonce, so text cannot
+  close a tag and pose as instructions.
+- The assistant's name, business name, tone, fallback contact, allowed origins and daily cap
+  come from tenant settings (`tenants.settings`).
+
+**How outcomes are decided.** Each assistant message is stored as `answered`, `no_answer`
+(feeds the knowledge-gaps report) or `smalltalk`, or `error` when generation failed. The model
+starts its reply with a hidden tag (`[[answered]]`, `[[no_answer]]` or `[[smalltalk]]`), which
+is stripped before streaming, because only the model reliably recognises a greeting in any
+language or script. Code then decides what can be verified: a reply is `answered` only if it
+cites at least one passage that was actually provided. `smalltalk` is taken from the model's tag
+when it cited nothing. Everything else, including a missing tag or a claimed answer without a
+citation, is `no_answer`. So an `answered` message always traces back to the knowledge base, and
+a confident-sounding reply without support is counted as a gap.
+
+**Protections for the public endpoint** (widget keys are visible in websites):
+- **Allowed origins:** widget requests must come from one of the tenant's `allowed_origins`.
+  CORS headers are returned only for that origin.
+- **Rate limits:** Redis counters per key and per visitor per minute, and a per-tenant daily
+  message cap. Over-limit requests get 429 with a clear message and `Retry-After`.
+- **Message length:** messages are limited to 2,000 characters (422 if longer).
+- **Conversation ownership:** a conversation can only be continued by the same tenant and
+  visitor.
+- **Failures:** a model error or timeout (first token, idle gap or total) ends the stream with an
+  `error` event and a short apology with the fallback contact, and is stored with the error. A
+  stream never hangs.

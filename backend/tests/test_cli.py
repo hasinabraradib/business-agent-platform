@@ -77,6 +77,14 @@ async def test_seed_demo_ingests_demo_knowledge_and_is_idempotent(
     assert len(first["demo-restaurant"][3]) > 18  # 18 menu rows plus the about page
     assert len(first["demo-shop"][3]) > 14  # 14 products plus three pages
     assert "embeddings: fake-hashing-768-v2" in first_out
+    async with owner_engine.connect() as conn:
+        settings = dict((await conn.execute(text("SELECT slug, settings FROM tenants"))).all())
+    assert settings["demo-restaurant"]["assistant_name"] == "Nodi"
+    assert "01700-000000" in settings["demo-restaurant"]["fallback_contact"]
+    assert settings["demo-shop"]["allowed_origins"] == [
+        "http://localhost:3000",
+        "https://jamdanilane.example",
+    ]
 
     assert await cli.run(["seed-demo"]) == 0
     second_out = capsys.readouterr().out

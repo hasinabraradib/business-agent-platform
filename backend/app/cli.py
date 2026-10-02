@@ -38,6 +38,14 @@ DEMO_TENANTS = [
         "name": "Nodi Kitchen",
         "slug": "demo-restaurant",
         "dir": "restaurant",
+        "settings": {
+            "assistant_name": "Nodi",
+            "business_name": "Nodi Kitchen (নদী কিচেন)",
+            "tone": "warm, friendly and concise, like a helpful host",
+            "fallback_contact": "call us on 01700-000000 (11 am to 10 pm)",
+            "allowed_origins": ["http://localhost:3000", "https://nodikitchen.example"],
+            "daily_message_cap": 500,
+        },
         "titles": {
             "menu.csv": "Nodi Kitchen menu",
             "about.md": "Nodi Kitchen: hours, location, reservations and FAQ",
@@ -47,6 +55,17 @@ DEMO_TENANTS = [
         "name": "Jamdani Lane",
         "slug": "demo-shop",
         "dir": "shop",
+        "settings": {
+            "assistant_name": "Mithila",
+            "business_name": "Jamdani Lane",
+            "tone": "polite, helpful and concise",
+            "fallback_contact": (
+                "WhatsApp or call 01800-000000 (10 am to 7 pm, Saturday to Thursday) "
+                "or email hello@jamdanilane.example"
+            ),
+            "allowed_origins": ["http://localhost:3000", "https://jamdanilane.example"],
+            "daily_message_cap": 500,
+        },
         "titles": {
             "products.csv": "Jamdani Lane product catalogue",
             "shipping.md": "Shipping",
@@ -116,8 +135,13 @@ async def _ensure_demo_tenants() -> dict[str, uuid.UUID]:
             if existing is not None:
                 print(f"{demo['slug']}: tenant already exists ({existing.id})")
                 ids[demo["slug"]] = existing.id
+                if existing.settings != demo["settings"]:
+                    existing.settings = demo["settings"]
+                    await session.commit()
+                    print(f"{demo['slug']}: chat settings updated")
                 continue
             tenant, admin_key = await create_tenant(session, name=demo["name"], slug=demo["slug"])
+            tenant.settings = demo["settings"]
             widget_key = new_api_key(tenant.id, "widget", label="Demo website widget")
             session.add(widget_key.record)
             await session.commit()

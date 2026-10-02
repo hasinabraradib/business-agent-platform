@@ -270,6 +270,16 @@ class ChatService:
             logger.warning("Follow-up rewrite failed, searching the original message: %s", reason)
             return turn.message, {"rewritten": False, "rewrite_error": reason}
         query = clean_rewrite(completion.text)
+        earlier = {t.content.strip().casefold() for t in turn.history if t.role == "user"}
+        repeated = (
+            query is not None
+            and query.casefold() in earlier
+            and query.casefold() != turn.message.strip().casefold()
+        )
+        if repeated:
+            # A known failure mode: the helper answers with a previous question instead of
+            # rewriting the new one (seen with an injection attempt as the new message).
+            query = None
         info: dict[str, Any] = {
             "rewritten": query is not None,
             "original_message": turn.message,
@@ -277,7 +287,9 @@ class ChatService:
             "rewrite_tokens": completion.usage.prompt_tokens + completion.usage.completion_tokens,
         }
         if query is None:
-            info["rewrite_error"] = "unusable rewrite output"
+            info["rewrite_error"] = (
+                "rewrite repeated an earlier message" if repeated else "unusable rewrite output"
+            )
             return turn.message, info
         return query, info
 

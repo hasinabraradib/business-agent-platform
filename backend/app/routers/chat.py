@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.auth import AuthContext, authenticate
 from app.chat.deps import get_chat_service, get_rate_limiter
+from app.chat.origins import check_origin, preflight
 from app.chat.prompts import HistoryTurn
 from app.chat.ratelimit import RateLimiter
 from app.chat.service import (
@@ -39,19 +40,6 @@ def _too_many(detail: str, retry_after: int) -> HTTPException:
     )
 
 
-def _check_origin(request: Request, auth: AuthContext, settings: TenantChatSettings) -> None:
-    origin = (request.headers.get("origin") or "").strip().rstrip("/").lower()
-    allowed = origin and origin in settings.allowed_origins
-    if auth.kind == "widget" and not allowed:
-        # Widget keys are public; the origin check stops other websites embedding them.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This website is not allowed to use this chat widget",
-        )
-    if allowed:
-        request.state.cors_origin = request.headers["origin"]
-
-
 async def _check_limits(
     limiter: RateLimiter, auth: AuthContext, body: ChatRequestBody, settings: TenantChatSettings
 ) -> None:
@@ -72,18 +60,7 @@ async def _check_limits(
 
 @router.options("/chat", include_in_schema=False)
 async def chat_preflight(request: Request) -> Response:
-    # Preflights carry no API key, so the tenant's origin list cannot be checked here; the
-    # actual POST is checked and only gets CORS headers for an allowed origin.
-    return Response(
-        status_code=status.HTTP_204_NO_CONTENT,
-        headers={
-            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
-            "Access-Control-Allow-Methods": "POST, OPTIONS",
-            "Access-Control-Allow-Headers": "authorization, content-type",
-            "Access-Control-Max-Age": "600",
-            "Vary": "Origin",
-        },
-    )
+    return preflight(request, "POST, OPTIONS")
 
 
 @router.post(
@@ -100,7 +77,7 @@ async def chat(
 ):
     tenant = await auth.db.tenant()
     settings = TenantChatSettings.from_tenant(tenant.name, tenant.settings)
-    _check_origin(request, auth, settings)
+    check_origin(request, auth, settings)
     await _check_limits(limiter, auth, body, settings)
 
     if body.conversation_id is not None:

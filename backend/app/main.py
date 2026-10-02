@@ -6,7 +6,16 @@ from fastapi import APIRouter, FastAPI, Request
 from app.chat.deps import get_chat_service, get_rate_limiter
 from app.ingestion.queue import get_job_queue
 from app.retrieval import get_retriever
-from app.routers import api_keys, chat, conversations, documents, health, search, tenant
+from app.routers import (
+    api_keys,
+    chat,
+    conversations,
+    documents,
+    health,
+    search,
+    tenant,
+    widget,
+)
 
 
 @asynccontextmanager
@@ -28,6 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(title="Business Agent Platform", lifespan=lifespan)
     app.include_router(health.router)
+    app.include_router(widget.router)
 
     v1 = APIRouter(prefix="/v1")
     v1.include_router(tenant.router)
@@ -36,6 +46,7 @@ def create_app() -> FastAPI:
     v1.include_router(search.router)
     v1.include_router(chat.router)
     v1.include_router(conversations.router)
+    v1.include_router(widget.config_router)
     app.include_router(v1)
 
     @app.middleware("http")

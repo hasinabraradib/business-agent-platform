@@ -243,3 +243,21 @@ async def test_gemini_reports_the_model_that_failed_last_and_keeps_long_errors()
         await _collect(provider)
     assert exc_info.value.model == "gemini-3.6-flash"  # the fallback was tried last
     assert long_message.strip() in str(exc_info.value)
+
+
+async def test_fake_default_replies_exercise_the_widget_offline() -> None:
+    from app.chat.prompts import ContextChunk, answer_request
+    from app.chat.settings import TenantChatSettings
+
+    settings = TenantChatSettings.from_tenant("Cafe", {})
+    fake = FakeChatProvider()
+    chunk = ContextChunk(1, "Menu", "row 1", "dish: Kacchi Biryani\nprice_bdt: 480")
+
+    async def reply(message, chunks):
+        request = answer_request(settings, [], message, chunks)
+        return (await fake.complete(request, model=fake.answer_model)).text
+
+    assert (await reply("Hi!", [])).startswith("[[smalltalk]]")
+    answered = await reply("Kacchi price?", [chunk])
+    assert answered.startswith("[[answered]]") and "dish: Kacchi Biryani [1]" in answered
+    assert (await reply("Weather?", [])).startswith("[[no_answer]]")

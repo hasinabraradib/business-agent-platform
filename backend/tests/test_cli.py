@@ -81,10 +81,13 @@ async def test_seed_demo_ingests_demo_knowledge_and_is_idempotent(
         settings = dict((await conn.execute(text("SELECT slug, settings FROM tenants"))).all())
     assert settings["demo-restaurant"]["assistant_name"] == "Nodi"
     assert "01700-000000" in settings["demo-restaurant"]["fallback_contact"]
-    assert settings["demo-shop"]["allowed_origins"] == [
-        "http://localhost:3000",
-        "https://jamdanilane.example",
-    ]
+    assert "http://localhost:8080" in settings["demo-shop"]["allowed_origins"]
+    assert settings["demo-shop"]["accent_color"] != settings["demo-restaurant"]["accent_color"]
+    assert any(
+        "\u0980" <= ch <= "\u09ff"
+        for q in settings["demo-restaurant"]["suggested_questions"]
+        for ch in q
+    )  # one suggested question is in Bengali
 
     assert await cli.run(["seed-demo"]) == 0
     second_out = capsys.readouterr().out
@@ -178,3 +181,35 @@ def test_module_entry_point_runs() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert _field(result.stdout, "admin_key").startswith("bap_admin_")
+
+
+async def test_seed_demo_writes_demo_page_config_and_rotates_keys(
+    capsys: pytest.CaptureFixture[str], client: AsyncClient, tmp_path
+) -> None:
+    import json as _json
+
+    config = tmp_path / "config.local.js"
+
+    def read_keys() -> dict:
+        text_ = config.read_text()
+        assert "do not commit" in text_
+        payload = _json.loads(text_.split("window.BAP_DEMO = ", 1)[1].rstrip().rstrip(";"))
+        assert payload["api"] == "http://api.test"
+        return payload["keys"]
+
+    args = ["seed-demo", "--demo-config", str(config), "--demo-api", "http://api.test"]
+    assert await cli.run(args) == 0
+    first = read_keys()
+    assert set(first) == {"demo-restaurant", "demo-shop"}
+    assert all(key.startswith("bap_widget_") for key in first.values())
+    headers = {"Origin": "http://localhost:8080"}
+    for key in first.values():
+        response = await client.get("/v1/widget/config", headers=bearer(key) | headers)
+        assert response.status_code == 200
+
+    assert await cli.run(args) == 0
+    second = read_keys()
+    assert second["demo-shop"] != first["demo-shop"]
+    old = await client.get("/v1/widget/config", headers=bearer(first["demo-shop"]) | headers)
+    assert old.status_code == 401  # rotated keys are revoked
+    capsys.readouterr()

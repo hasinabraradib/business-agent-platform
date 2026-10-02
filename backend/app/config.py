@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     chat_rate_per_visitor_per_minute: int = 10
     chat_daily_message_cap: int = 2000  # per tenant; tenant settings may set a lower/higher cap
 
+    # Built widget bundle (web/widget/dist), served at /widget.js. A mounted volume in Docker.
+    widget_dist_dir: str = "../web/widget/dist"
+
     @field_validator("relevance_threshold", mode="before")
     @classmethod
     def _empty_threshold_means_default(cls, value: object) -> object:

@@ -136,3 +136,17 @@ def test_tenant_settings_defaults_and_origin_normalization() -> None:
     assert settings.business_name == "Cafe"
     assert settings.assistant_name == "Assistant"
     assert settings.allowed_origins == ["https://cafe.example"]
+
+
+def test_invalid_tenant_settings_fall_back_to_defaults_per_field() -> None:
+    settings = TenantChatSettings.from_tenant(
+        "Cafe",
+        {
+            "accent_color": "javascript:alert(1)",
+            "suggested_questions": ["x" * 500],
+            "assistant_name": "Nodi",
+        },
+    )
+    assert settings.accent_color == "#C5EE4F"
+    assert settings.suggested_questions == []
+    assert settings.assistant_name == "Nodi"

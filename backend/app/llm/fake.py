@@ -17,15 +17,27 @@ class Scripted:
 
 Responder = Callable[[ChatRequest, str], "str | Scripted"]
 
-DEV_REPLY = (
-    "[[no_answer]]\n(This is the offline fake chat model. Set GEMINI_API_KEY for real answers.)"
+DEV_NO_ANSWER = (
+    "[[no_answer]]\n(Offline demo model) I couldn't find that in our information. "
+    "Set CHAT_PROVIDER=gemini with a GEMINI_API_KEY for real answers."
 )
+GREETING = re.compile(r"^(hi|hello|hey|thanks?|thank you|assalamu? ?alaikum|হ্যালো|ধন্যবাদ)\b", re.I)
 
 
 def _default_responder(request: ChatRequest, model: str) -> str:
+    """Offline development replies: greet, quote the best passage with a citation, or say it
+    does not know. Good enough to exercise the widget end to end without an API key."""
+    prompt = request.turns[-1].text
+    message = re.search(r"<customer-message-(\w+)>\n(.*)\n</customer-message-\1>", prompt, re.S)
+    text = message.group(2).strip() if message else prompt.strip().splitlines()[-1]
     if model == FakeChatProvider.helper_model:
-        return request.turns[-1].text.strip().splitlines()[-1]
-    return DEV_REPLY
+        return text
+    if GREETING.match(text):
+        return "[[smalltalk]]\nHello! (Offline demo model) How can I help you today?"
+    passage = re.search(r"^\[1\] [^\n]*\n([^\n]+)", prompt, re.M)
+    if passage:
+        return f"[[answered]]\n(Offline demo model) From our information: {passage.group(1)} [1]"
+    return DEV_NO_ANSWER
 
 
 class FakeChatProvider(ChatProvider):

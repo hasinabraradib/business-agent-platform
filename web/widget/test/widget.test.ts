@@ -72,6 +72,7 @@ test("streamed tokens append in order and citations become chips", async () => {
   assert.equal(request.body?.stream, true);
   assert.ok(request.body?.visitor_id);
   assert.equal(request.body?.conversation_id, undefined); // first message
+  assert.match(String(request.body?.client_message_id), /^[A-Za-z0-9_-]{8,64}$/);
 
   assert.deepEqual(bubbles(root, "user").map((b) => b.textContent), ["How much is the Kacchi?"]);
   const answer = bubbles(root, "assistant").at(-1);
@@ -182,6 +183,8 @@ test("a server error event shows the apology with a retry button that works", as
   assert.equal(root.querySelector(".msg.error"), null);
   assert.equal(bubbles(root, "assistant").at(-1)?.textContent, "Recovered");
   assert.equal(calls[2].body?.message, "Kacchi price?"); // the same question, re-asked
+  // ...with the same client_message_id, so the server stores the question only once.
+  assert.equal(calls[2].body?.client_message_id, calls[1].body?.client_message_id);
   assert.equal(calls[2].body?.conversation_id, "conv-9");
   assert.equal(bubbles(root, "user").length, 1); // no duplicate customer bubble
 });
@@ -314,4 +317,25 @@ test("after retrying, focus moves to the input instead of being lost", async () 
   await flush();
   await flush();
   assert.equal(root.activeElement, widget.input);
+});
+
+test("each new message gets its own client_message_id", async () => {
+  const { widget, calls } = mountWidget([{ sse: reply(["one"]) }, { sse: reply(["two"]) }]);
+  await widget.open();
+  await widget.send("first");
+  await widget.send("second");
+  assert.notEqual(calls[1].body?.client_message_id, calls[2].body?.client_message_id);
+});
+
+test("offline mode shows one notice at the top of the panel", async () => {
+  const offline = mountWidget([], { config: { ...CONFIG, offline: true } });
+  await offline.widget.open();
+  const notice = offline.root.querySelector(".notice") as HTMLElement;
+  assert.equal(notice.hidden, false);
+  assert.equal(notice.getAttribute("role"), "note");
+  assert.match(notice.textContent ?? "", /offline test model/);
+
+  const online = mountWidget([], { config: { ...CONFIG, offline: false } });
+  await online.widget.open();
+  assert.equal((online.root.querySelector(".notice") as HTMLElement).hidden, true);
 });

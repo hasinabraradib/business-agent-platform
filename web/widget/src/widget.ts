@@ -2,7 +2,7 @@ import { ApiClient, ApiError, type Citation, type WidgetConfig } from "./api.ts"
 import { readableTextOn, safeAccent } from "./color.ts";
 import { icon } from "./icons.ts";
 import { renderText } from "./render.ts";
-import { type Session, SessionStore, type StoredMessage } from "./storage.ts";
+import { newVisitorId, type Session, SessionStore, type StoredMessage } from "./storage.ts";
 import { widgetCss } from "./styles.ts";
 import { tokens } from "./tokens.ts";
 
@@ -44,7 +44,7 @@ export class Widget {
   private config: WidgetConfig = DEFAULT_CONFIG;
   private configLoaded = false;
   private busy = false;
-  private lastQuestion: string | null = null;
+  private lastQuestion: { text: string; clientId: string } | null = null;
 
   readonly launcher: HTMLButtonElement;
   readonly panel: HTMLElement;
@@ -56,6 +56,7 @@ export class Widget {
   private readonly nameEl: HTMLElement;
   private readonly avatar: HTMLElement;
   private readonly suggestions: HTMLElement;
+  private readonly notice: HTMLElement;
 
   constructor(options: WidgetOptions) {
     this.root = options.root;
@@ -103,6 +104,10 @@ export class Widget {
     this.closeButton.appendChild(icon(this.doc, "close"));
     header.append(this.avatar, title, this.closeButton);
 
+    this.notice = el("div", "notice");
+    this.notice.setAttribute("role", "note");
+    this.notice.hidden = true;
+
     this.list = el("div", "messages");
     this.list.setAttribute("role", "log");
     this.list.setAttribute("aria-label", "Conversation");
@@ -133,7 +138,7 @@ export class Widget {
     this.live.setAttribute("aria-live", "polite");
     this.live.setAttribute("aria-atomic", "true");
 
-    this.panel.append(header, this.list, this.suggestions, form, this.live);
+    this.panel.append(header, this.notice, this.list, this.suggestions, form, this.live);
     this.root.append(style, this.panel, this.launcher);
 
     this.launcher.addEventListener("click", () => (this.isOpen ? this.close() : void this.open()));
@@ -203,6 +208,10 @@ export class Widget {
     this.nameEl.textContent = name;
     this.avatar.textContent = name.trim().charAt(0).toUpperCase() || "A";
     this.panel.setAttribute("aria-label", `Chat with ${name}`);
+    this.notice.hidden = !config.offline;
+    this.notice.textContent = config.offline
+      ? "Demo mode: replies come from an offline test model."
+      : "";
     this.launcher.setAttribute(
       "aria-label",
       `${this.isOpen ? "Close" : "Open"} chat with ${name}`,
@@ -332,7 +341,7 @@ export class Widget {
       retry.addEventListener("click", () => {
         node.remove();
         this.keepFocus();
-        if (this.lastQuestion) void this.ask(this.lastQuestion);
+        if (this.lastQuestion) void this.ask(this.lastQuestion.text, this.lastQuestion.clientId);
       });
       node.appendChild(retry);
     }
@@ -348,15 +357,16 @@ export class Widget {
     this.input.value = "";
     this.autosize();
     const at = this.now();
-    this.session.messages.push({ role: "user", text, at });
+    const clientId = newVisitorId();
+    this.session.messages.push({ role: "user", text, at, clientId });
     this.persist();
     this.suggestions.replaceChildren();
     this.addMessage("user", text, at);
-    await this.ask(text);
+    await this.ask(text, clientId);
   }
 
-  private async ask(text: string, retriedWithoutConversation = false): Promise<void> {
-    this.lastQuestion = text;
+  private async ask(text: string, clientId: string, retriedWithoutConversation = false): Promise<void> {
+    this.lastQuestion = { text, clientId };
     this.setBusy(true);
     const node = this.doc.createElement("div");
     node.className = "msg assistant";
@@ -380,6 +390,7 @@ export class Widget {
         {
           visitor_id: this.session.visitorId,
           message: text,
+          client_message_id: clientId,
           ...(this.session.conversationId ? { conversation_id: this.session.conversationId } : {}),
         },
         {
@@ -416,7 +427,7 @@ export class Widget {
         this.session.conversationId = null;
         this.persist();
         this.setBusy(false);
-        return this.ask(text, true);
+        return this.ask(text, clientId, true);
       }
       const message = this.describe(error);
       this.showError(message.text, message.retry, message.retryAfter);

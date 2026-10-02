@@ -47,6 +47,7 @@ export function createStore(storage?: () => Storage | null): KeyValue {
 export interface StoredMessage {
   role: "user" | "assistant";
   text: string;
+  clientId?: string; // customer messages: the client_message_id sent with it
   at: number; // epoch milliseconds
   citations?: { title: string; detail: string; snippet: string }[];
 }

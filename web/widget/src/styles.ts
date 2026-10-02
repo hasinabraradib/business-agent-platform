@@ -42,6 +42,10 @@ background:var(--bap-color-subtle);display:grid;place-items:center;cursor:pointe
 transition:background var(--bap-motion-fast) var(--bap-motion-easing)}
 .icon-button:hover{background:var(--bap-color-subtle-hover)}
 .icon-button svg{width:18px;height:18px}
+.notice{margin:var(--bap-space-md) var(--bap-space-lg) 0;padding:var(--bap-space-sm) var(--bap-space-md);
+border-radius:var(--bap-radius-pill);background:var(--bap-color-violet-soft);color:var(--bap-color-violet-ink);
+font-size:var(--bap-font-small);text-align:center}
+.notice[hidden]{display:none}
 .messages{flex:1;overflow-y:auto;padding:var(--bap-space-xl);display:flex;flex-direction:column;
 gap:var(--bap-space-lg);overscroll-behavior:contain}
 .msg{display:flex;flex-direction:column;min-width:0;max-width:86%;animation:bap-in var(--bap-motion-base) var(--bap-motion-easing)}

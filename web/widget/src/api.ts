@@ -1,6 +1,7 @@
 import { readEvents } from "./sse.ts";
 
 export interface WidgetConfig {
+  offline?: boolean; // the API runs an offline demo model
   assistant_name: string;
   business_name: string;
   greeting: string;
@@ -27,6 +28,7 @@ export interface ChatRequest {
   visitor_id: string;
   message: string;
   conversation_id?: string;
+  client_message_id?: string; // the same id on a retry, so the message is stored once
 }
 
 export class ApiError extends Error {

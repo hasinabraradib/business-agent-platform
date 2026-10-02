@@ -51,14 +51,14 @@ class FakeChatProvider(ChatProvider):
             script = Scripted(script)
         for index, piece in enumerate(self._pieces(script.text)):
             if script.fail_after_chunks is not None and index >= script.fail_after_chunks:
-                raise ChatError("fake model failure")
+                raise ChatError("fake model failure", model=model)
             if script.delay:
                 await asyncio.sleep(script.delay)
             yield ChatChunk(text=piece)
         if script.fail_after_chunks is not None and script.fail_after_chunks >= len(
             self._pieces(script.text)
         ):
-            raise ChatError("fake model failure")
+            raise ChatError("fake model failure", model=model)
         prompt = request.system + "".join(t.text for t in request.turns)
         yield ChatChunk(usage=Usage(len(prompt) // 4, max(1, len(script.text) // 4)), model=model)
 

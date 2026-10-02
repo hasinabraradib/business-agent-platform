@@ -21,6 +21,7 @@ DEFAULT_HELPER_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_FALLBACK_MODEL = "gemini-3.6-flash"
 BLOCKING_FINISH_REASONS = {"SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII"}
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+MAX_ERROR_CHARS = 2000
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ class GeminiChatProvider(ChatProvider):
             if candidate != models[-1]:
                 logger.warning("%s still unavailable; falling back to %s", candidate, models[-1])
         assert last_error is not None
-        raise ChatError(str(last_error))
+        raise ChatError(str(last_error), model=last_error.model)
 
     async def _stream_once(self, request: ChatRequest, model: str) -> AsyncIterator[ChatChunk]:
         url = f"{API_BASE}/models/{model}:streamGenerateContent?alt=sse"
@@ -115,26 +116,32 @@ class GeminiChatProvider(ChatProvider):
                         f"{_error_message(await response.aread())}"
                     )
                     if response.status_code in RETRYABLE_STATUS:
-                        raise _Unavailable(error)
-                    raise ChatError(error)
+                        raise _Unavailable(error, model=model)
+                    raise ChatError(error, model=model)
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
                     try:
                         event = json.loads(line[5:])
                     except ValueError as exc:
-                        raise ChatError("Gemini sent a malformed stream event") from exc
-                    text, usage_update = _parse_event(event)
+                        error = "Gemini sent a malformed stream event"
+                        raise ChatError(error, model=model) from exc
+                    try:
+                        text, usage_update = _parse_event(event)
+                    except ChatError as exc:
+                        raise ChatError(str(exc), model=model) from exc
                     if usage_update is not None:
                         usage = usage_update
                     if text:
                         started = True
                         yield ChatChunk(text=text)
         except httpx.TimeoutException as exc:
-            raise ChatError(f"Gemini chat request timed out ({type(exc).__name__})") from exc
+            error = f"Gemini chat request timed out ({type(exc).__name__})"
+            raise ChatError(error, model=model) from exc
         except httpx.TransportError as exc:
             error = f"Gemini chat request failed ({type(exc).__name__})"
-            raise (ChatError(error) if started else _Unavailable(error)) from exc
+            failure = ChatError if started else _Unavailable
+            raise failure(error, model=model) from exc
         yield ChatChunk(usage=usage, model=model)
 
     async def aclose(self) -> None:
@@ -163,6 +170,6 @@ def _parse_event(event: dict) -> tuple[str, Usage | None]:
 
 def _error_message(body: bytes) -> str:
     try:
-        return str(json.loads(body)["error"]["message"])[:300]
+        return str(json.loads(body)["error"]["message"])[:MAX_ERROR_CHARS]
     except (ValueError, KeyError, TypeError):
         return "unknown error"

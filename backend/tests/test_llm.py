@@ -230,3 +230,16 @@ async def test_gemini_client_errors_are_not_retried() -> None:
     with pytest.raises(ChatError, match="bad request"):
         await _collect(_retrying_provider(handler, []))
     assert len(calls) == 1
+
+
+async def test_gemini_reports_the_model_that_failed_last_and_keeps_long_errors() -> None:
+    long_message = "quota details " * 100  # ~1400 characters
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, json={"error": {"message": long_message}})
+
+    provider = _retrying_provider(handler, [], max_attempts=1)
+    with pytest.raises(ChatError) as exc_info:
+        await _collect(provider)
+    assert exc_info.value.model == "gemini-3.6-flash"  # the fallback was tried last
+    assert long_message.strip() in str(exc_info.value)

@@ -447,8 +447,37 @@ async def test_mid_stream_model_failure_sends_error_event_and_stores_error(
         ).one()
     assert stored.outcome == "error"
     assert stored.content == error["message"]
+    detail = (
+        await client.get(
+            f"/v1/conversations/{error['conversation_id']}", headers=bearer(tenant.admin_key)
+        )
+    ).json()
+    assert detail["messages"][-1]["model"] == "fake-chat"  # the model that failed
     assert "model error: fake model failure" in stored.error
     assert "characters had been streamed" in stored.error
+
+
+async def test_stored_errors_are_bounded_not_truncated_early(client, cafe, provider) -> None:
+    tenant, _ = cafe
+
+    class LongError(FakeChatProvider):
+        async def stream(self, request, *, model):
+            from app.llm import ChatError
+
+            raise ChatError("x" * 5000, model="model-b")
+            yield  # pragma: no cover
+
+    service = client._transport.app.dependency_overrides[get_chat_service]()
+    service.provider = LongError()
+    body = (await chat(client, tenant.admin_key, "Hi")).json()
+    detail = (
+        await client.get(
+            f"/v1/conversations/{body['conversation_id']}", headers=bearer(tenant.admin_key)
+        )
+    ).json()
+    stored = detail["messages"][-1]
+    assert stored["model"] == "model-b"
+    assert 1500 < len(stored["error"]) <= 2000
 
 
 async def test_model_timeout_sends_error_event(client, cafe, provider) -> None:

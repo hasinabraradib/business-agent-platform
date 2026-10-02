@@ -38,6 +38,7 @@ from app.tenancy import tenant_db
 
 logger = logging.getLogger(__name__)
 
+MAX_STORED_ERROR_CHARS = 2000
 # Keeps references to detached "store the message" tasks started when a client disconnects.
 _background: set[asyncio.Task] = set()
 
@@ -216,6 +217,8 @@ class ChatService:
         except Exception as exc:  # ChatError and anything unexpected
             logger.warning("Answer generation failed: %s", exc)
             error = f"model error: {exc}"
+            if failed_model := getattr(exc, "model", None):
+                run.model = failed_model
         if error is not None:
             run.mark("generate", since)
             async for event in self._fail(turn, run, error):
@@ -330,7 +333,7 @@ class ChatService:
                 completion_tokens=run.usage.completion_tokens or None,
                 timings=run.timings,
                 retrieval=run.retrieval or None,
-                error=error,
+                error=error[:MAX_STORED_ERROR_CHARS] if error else None,
             )
             db.add(message)
             conversation = await db.get(Conversation, turn.conversation_id)

@@ -42,6 +42,10 @@ class Completion:
 class ChatError(Exception):
     """The model call failed. The message is for logs and the stored error, not customers."""
 
+    def __init__(self, message: str, *, model: str | None = None) -> None:
+        super().__init__(message)
+        self.model = model  # the model whose call failed (last one tried, with fallbacks)
+
 
 class ChatProvider(ABC):
     #: Model for customer-facing answers.

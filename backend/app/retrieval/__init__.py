@@ -47,5 +47,6 @@ def get_retriever() -> Retriever:
             relevance_threshold=settings.relevance_threshold,
             iterative_scan=settings.hnsw_iterative_scan,
             ef_search=settings.hnsw_ef_search,
+            strong_keyword_min_idf=settings.strong_keyword_min_idf,
         ),
     )

@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     # relaxed_order), and the candidate list size per scan step.
     hnsw_iterative_scan: str = "relaxed_order"
     hnsw_ef_search: int = 100
+    strong_keyword_min_idf: float = 1.5
 
     @field_validator("relevance_threshold", mode="before")
     @classmethod

@@ -83,6 +83,7 @@ class SearchConfidence(BaseModel):
     top_vector_similarity: float | None
     has_relevant_context: bool
     threshold: float
+    strong_keyword_match: bool
 
 
 class SearchReranker(BaseModel):

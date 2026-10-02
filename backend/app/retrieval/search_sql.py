@@ -28,6 +28,19 @@ class KeywordHit:
     chunk_id: uuid.UUID
     score: float
     matched_terms: int
+    total_terms: int = 0  # query terms searched (content words + phrases)
+    matched_phrases: int = 0  # exact compound-token (e.g. product code) matches
+    max_idf: float = 0.0  # weight of the rarest matched term
+
+    def is_strong_match(self, min_idf: float) -> bool:
+        """An exact code match, or every query term matched including a rare one."""
+        if self.matched_phrases > 0:
+            return True
+        return (
+            self.total_terms > 0
+            and self.matched_terms == self.total_terms
+            and (self.max_idf >= min_idf)
+        )
 
 
 # The HNSW index applies the tenant/model filter only after it has produced candidates (about
@@ -126,10 +139,12 @@ KEYWORD_SQL = text(
         WHERE NOT EXISTS (SELECT 1 FROM all_lexemes WHERE lexeme <> ALL(:stopwords))
     ),
     terms AS (
-        SELECT to_tsquery('simple', quote_literal(lexeme)) AS tsq FROM lexemes
+        SELECT to_tsquery('simple', quote_literal(lexeme)) AS tsq, false AS is_phrase
+        FROM lexemes
         UNION ALL
-        SELECT phraseto_tsquery('simple', phrase) FROM unnest(:phrases) AS phrase
+        SELECT phraseto_tsquery('simple', phrase), true FROM unnest(:phrases) AS phrase
     ),
+    term_count AS (SELECT count(*) AS n FROM terms),
     corpus AS (
         SELECT count(*)::float8 AS n FROM chunks WHERE tenant_id = :tenant_id
     ),
@@ -138,7 +153,7 @@ KEYWORD_SQL = text(
         SELECT replace(plainto_tsquery('simple', :query)::text, ' & ', ' | ')::tsquery AS q
     ),
     weighted AS (
-        SELECT t.tsq,
+        SELECT t.tsq, t.is_phrase,
                ln(1 + (corpus.n - df.df + 0.5) / (df.df + 0.5)) AS idf
         FROM terms AS t
         CROSS JOIN corpus
@@ -151,6 +166,9 @@ KEYWORD_SQL = text(
     SELECT c.id,
            sum(w.idf) AS score,
            count(*) AS matched_terms,
+           (SELECT n FROM term_count) AS total_terms,
+           count(*) FILTER (WHERE w.is_phrase) AS matched_phrases,
+           max(w.idf) AS max_idf,
            ts_rank_cd(c.tsv, (SELECT q FROM any_term)) AS density
     FROM chunks AS c
     JOIN weighted AS w ON c.tsv @@ w.tsq
@@ -206,4 +224,14 @@ async def keyword_search(db: TenantDB, query: str, limit: int) -> list[KeywordHi
             "limit": limit,
         },
     )
-    return [KeywordHit(row.id, float(row.score), int(row.matched_terms)) for row in rows]
+    return [
+        KeywordHit(
+            row.id,
+            float(row.score),
+            int(row.matched_terms),
+            int(row.total_terms),
+            int(row.matched_phrases),
+            float(row.max_idf),
+        )
+        for row in rows
+    ]

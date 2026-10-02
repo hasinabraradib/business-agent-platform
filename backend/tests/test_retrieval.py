@@ -587,3 +587,28 @@ async def test_chunks_from_another_embedding_model_are_not_vector_ranked(
     assert result.top_vector_similarity is None and result.has_relevant_context is False
     assert {c.chunk_id for c in result.chunks} <= ids_a  # keyword still finds them
     assert all(c.vector_score is None for c in result.chunks)
+
+
+# --- strong keyword match ----------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("query", "strong"),
+    [
+        ("JL-SAR-001", True),  # exact code (phrase) match
+        ("Do you have borhani?", True),  # the only content word matched, and it is rare
+        ("ফিরনি", True),
+        ("borhani with ice cream", False),  # not every content word matched
+        ("quantum chromodynamics", False),  # nothing matched
+    ],
+)
+async def test_strong_keyword_match(app_engine, shop, query, strong) -> None:
+    tenant, _ = shop
+    result = await make_retriever(app_engine).retrieve(tenant.id, query, "hybrid", 5)
+    assert result.strong_keyword_match is strong
+
+
+async def test_vector_mode_never_reports_strong_keyword_match(app_engine, shop) -> None:
+    tenant, _ = shop
+    result = await make_retriever(app_engine).retrieve(tenant.id, "JL-SAR-001", "vector", 5)
+    assert result.strong_keyword_match is False

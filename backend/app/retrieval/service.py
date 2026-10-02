@@ -48,6 +48,9 @@ class RetrievalConfig:
     iterative_scan: str = "relaxed_order"
     ef_search: int = 100
     exact_fallback: bool = True
+    # A keyword hit matching every query term counts as strong if its rarest term's idf is at
+    # least this (1.5 ~ the term occurs in under ~20% of the tenant's chunks).
+    strong_keyword_min_idf: float = 1.5
 
 
 @dataclass
@@ -71,6 +74,9 @@ class RetrievalResult:
     top_vector_similarity: float | None
     has_relevant_context: bool
     relevance_threshold: float
+    # The best keyword hit is an exact code match, or contains every query term (one of them
+    # rare). Catches exact lookups whose vector similarity is low (a bare product code).
+    strong_keyword_match: bool
     embedding_model: str
     embedding_cached: bool
     reranker: str | None = None
@@ -230,6 +236,8 @@ class Retriever:
             top_vector_similarity=top_similarity,
             has_relevant_context=top_similarity is not None and top_similarity >= threshold,
             relevance_threshold=threshold,
+            strong_keyword_match=bool(keyword_hits)
+            and keyword_hits[0].is_strong_match(self.config.strong_keyword_min_idf),
             embedding_model=self.embedder.model_name,
             embedding_cached=embedding_holder["cached"],
             reranker=self.reranker.name if mode == "hybrid_rerank" else None,

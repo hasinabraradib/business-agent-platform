@@ -48,6 +48,7 @@ async def search(
             top_vector_similarity=result.top_vector_similarity,
             has_relevant_context=result.has_relevant_context,
             threshold=result.relevance_threshold,
+            strong_keyword_match=result.strong_keyword_match,
         ),
         embedding_model=result.embedding_model,
         embedding_cached=result.embedding_cached,

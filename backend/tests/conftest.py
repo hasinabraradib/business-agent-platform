@@ -1,5 +1,6 @@
 import asyncio
 import os
+import socket
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
@@ -36,6 +37,24 @@ TEST_OWNER_DATABASE_URL = _with_database(_settings.owner_database_url, _settings
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ["OWNER_DATABASE_URL"] = TEST_OWNER_DATABASE_URL
 get_settings.cache_clear()
+
+# Tests never call a real AI API, even if .env has a key.
+os.environ["EMBEDDING_PROVIDER"] = "fake"
+os.environ["GEMINI_API_KEY"] = ""
+
+# ...or the network at all: only loopback hosts resolve (Postgres and Redis run locally).
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_real_getaddrinfo = socket.getaddrinfo
+
+
+def _loopback_only_getaddrinfo(host, *args, **kwargs):
+    name = host.decode() if isinstance(host, bytes) else host
+    if name not in _LOOPBACK_HOSTS:
+        raise OSError(f"Network access is disabled in tests (tried to resolve {name!r})")
+    return _real_getaddrinfo(host, *args, **kwargs)
+
+
+socket.getaddrinfo = _loopback_only_getaddrinfo
 
 
 async def _prepare_database() -> None:

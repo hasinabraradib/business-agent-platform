@@ -38,7 +38,8 @@ export interface Call {
   body: Record<string, unknown> | null;
 }
 
-/** fetch() stand-in: answers /v1/widget/config and queued /v1/chat responses, records calls. */
+/** fetch() stand-in: answers /v1/widget/config and queued /v1/chat (and /v1/chat/updates)
+ * responses in order, and records calls. */
 export function fakeFetch(config: Record<string, unknown> | FakeResponse, chat: FakeResponse[]) {
   const calls: Call[] = [];
   const fetchFn = async (url: string, init?: RequestInit): Promise<Response> => {
@@ -76,7 +77,7 @@ export const CONFIG = {
 
 export function mountWidget(
   chat: FakeResponse[],
-  options: { config?: Record<string, unknown> | FakeResponse; kv?: KeyValue } = {},
+  options: { config?: Record<string, unknown> | FakeResponse; kv?: KeyValue; pollIntervalMs?: number } = {},
 ) {
   document.body.replaceChildren();
   const host = document.createElement("div");
@@ -90,6 +91,7 @@ export function mountWidget(
     api: new ApiClient("https://api.example/", "bap_widget_testkey123456", fake.fetchFn),
     sessions: new SessionStore(kv, "testkey123456"),
     now: () => Date.UTC(2026, 9, 3, 9, 30),
+    pollIntervalMs: options.pollIntervalMs ?? 60_000,
   });
   return { widget, root, host, kv, calls: fake.calls, chat };
 }

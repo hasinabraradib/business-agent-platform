@@ -17,10 +17,29 @@ export interface Citation {
   snippet: string;
 }
 
+export interface ChatDone {
+  message_id: string | null;
+  conversation_id: string;
+  outcome: string | null;
+  silent?: boolean; // a team member handles the chat: no assistant reply
+  conversation_status?: string; // ai | waiting_human | human | resolved
+}
+
+export interface StaffMessage {
+  id: string;
+  content: string;
+  created_at: string;
+}
+
+export interface ChatUpdates {
+  conversation_status: string;
+  messages: StaffMessage[];
+}
+
 export interface ChatHandlers {
   onToken(text: string): void;
   onCitations(citations: Citation[]): void;
-  onDone(done: { message_id: string; conversation_id: string; outcome: string }): void;
+  onDone(done: ChatDone): void;
   onError(error: { message: string; conversation_id?: string }): void;
 }
 
@@ -78,6 +97,18 @@ export class ApiClient {
     });
     if (!response.ok) return this.fail(response);
     return (await response.json()) as WidgetConfig;
+  }
+
+  /** Team members' replies newer than `after` (an ISO timestamp), for polling. */
+  async updates(visitorId: string, conversationId: string, after: string | null): Promise<ChatUpdates> {
+    const query = new URLSearchParams({ visitor_id: visitorId, conversation_id: conversationId });
+    if (after) query.set("after", after);
+    const response = await this.fetchFn(`${this.base}/v1/chat/updates?${query}`, {
+      headers: this.headers(),
+      credentials: "omit",
+    });
+    if (!response.ok) return this.fail(response);
+    return (await response.json()) as ChatUpdates;
   }
 
   /** Send a message and dispatch the streamed reply. Resolves after done or error. */

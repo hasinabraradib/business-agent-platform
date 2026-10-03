@@ -45,7 +45,7 @@ export function createStore(storage?: () => Storage | null): KeyValue {
 }
 
 export interface StoredMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "staff"; // staff: a team member, shown as "Team member"
   text: string;
   clientId?: string; // customer messages: the client_message_id sent with it
   at: number; // epoch milliseconds
@@ -56,6 +56,8 @@ export interface Session {
   visitorId: string;
   conversationId: string | null;
   messages: StoredMessage[];
+  status?: string; // the conversation's handoff status, from the server
+  staffAfter?: string | null; // created_at of the newest team member message shown
 }
 
 const MAX_MESSAGES = 50;
@@ -85,6 +87,8 @@ export class SessionStore {
             visitorId: parsed.visitorId,
             conversationId: typeof parsed.conversationId === "string" ? parsed.conversationId : null,
             messages: Array.isArray(parsed.messages) ? parsed.messages.slice(-MAX_MESSAGES) : [],
+            status: typeof parsed.status === "string" ? parsed.status : "ai",
+            staffAfter: typeof parsed.staffAfter === "string" ? parsed.staffAfter : null,
           };
         }
       }

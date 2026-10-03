@@ -12,7 +12,11 @@ export interface WidgetOptions {
   api: ApiClient;
   sessions: SessionStore;
   now?: () => number;
+  pollIntervalMs?: number; // how often to check for team replies while a person handles the chat
 }
+
+const HUMAN_STATUSES = new Set(["waiting_human", "human"]);
+const STAFF_LABEL = "Team member";
 
 const DEFAULT_CONFIG: WidgetConfig = {
   assistant_name: "Assistant",
@@ -45,6 +49,9 @@ export class Widget {
   private configLoaded = false;
   private busy = false;
   private lastQuestion: { text: string; clientId: string } | null = null;
+  private readonly pollIntervalMs: number;
+  private poller: ReturnType<typeof setInterval> | null = null;
+  private polling = false;
 
   readonly launcher: HTMLButtonElement;
   readonly panel: HTMLElement;
@@ -65,6 +72,7 @@ export class Widget {
     this.api = options.api;
     this.sessions = options.sessions;
     this.now = options.now ?? (() => Date.now());
+    this.pollIntervalMs = options.pollIntervalMs ?? 5000;
     this.session = this.sessions.load();
 
     const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "") => {
@@ -188,10 +196,12 @@ export class Widget {
       }
       this.renderHistory();
     }
+    this.updatePolling();
   }
 
   close(): void {
     if (!this.isOpen) return;
+    this.stopPolling();
     this.panel.removeAttribute("data-open");
     this.host.removeAttribute("data-open");
     this.launcher.setAttribute("aria-expanded", "false");
@@ -252,9 +262,15 @@ export class Widget {
     }
   }
 
-  private addMessage(role: "user" | "assistant", text: string, at: number | null): HTMLElement {
+  private addMessage(role: StoredMessage["role"], text: string, at: number | null): HTMLElement {
     const node = this.doc.createElement("div");
     node.className = `msg ${role}`;
+    if (role === "staff") {
+      const who = this.doc.createElement("div");
+      who.className = "who";
+      who.textContent = STAFF_LABEL; // a person on the team, never the assistant's name
+      node.appendChild(who);
+    }
     const bubble = this.doc.createElement("div");
     bubble.className = "bubble";
     bubble.dir = "auto";
@@ -405,11 +421,19 @@ export class Widget {
           onDone: (done) => {
             const at = this.now();
             this.session.conversationId = done.conversation_id;
-            this.session.messages.push({ role: "assistant", text: reply, at, citations: chips });
+            this.session.status = done.conversation_status ?? "ai";
+            if (done.silent) {
+              // A team member is handling the chat: the message is with them, no reply here.
+              node.remove();
+              this.live.textContent = "";
+            } else {
+              this.session.messages.push({ role: "assistant", text: reply, at, citations: chips });
+              this.addMeta(node, at);
+              if (chips.length) this.addChips(node, chips);
+              this.live.textContent = `${this.config.assistant_name}: ${reply}`;
+            }
             this.persist();
-            this.addMeta(node, at);
-            if (chips.length) this.addChips(node, chips);
-            this.live.textContent = `${this.config.assistant_name}: ${reply}`;
+            this.updatePolling();
           },
           onError: (error) => {
             node.remove();
@@ -436,6 +460,46 @@ export class Widget {
       this.setBusy(false);
       this.scrollToEnd();
     }
+  }
+
+  /** Poll for team replies only while the panel is open and a person handles the chat. */
+  private updatePolling(): void {
+    const wanted = this.isOpen && !!this.session.conversationId && HUMAN_STATUSES.has(this.session.status ?? "");
+    if (wanted && this.poller === null) {
+      this.poller = setInterval(() => void this.poll(), this.pollIntervalMs);
+      void this.poll();
+    } else if (!wanted) {
+      this.stopPolling();
+    }
+  }
+
+  private stopPolling(): void {
+    if (this.poller !== null) clearInterval(this.poller);
+    this.poller = null;
+  }
+
+  async poll(): Promise<void> {
+    const conversationId = this.session.conversationId;
+    if (this.polling || !conversationId) return;
+    this.polling = true;
+    try {
+      const updates = await this.api.updates(this.session.visitorId, conversationId, this.session.staffAfter ?? null);
+      for (const message of updates.messages) {
+        if (this.session.staffAfter && message.created_at <= this.session.staffAfter) continue;
+        const at = Date.parse(message.created_at) || this.now();
+        this.session.messages.push({ role: "staff", text: message.content, at });
+        this.session.staffAfter = message.created_at;
+        this.addMessage("staff", message.content, at);
+        this.live.textContent = `${STAFF_LABEL}: ${message.content}`;
+      }
+      this.session.status = updates.conversation_status;
+      this.persist();
+    } catch {
+      // offline or rate limited: try again on the next tick
+    } finally {
+      this.polling = false;
+    }
+    this.updatePolling();
   }
 
   private describe(error: unknown): { text: string; retry: boolean; retryAfter: number | null } {

@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     chat_rate_per_visitor_per_minute: int = 10
     chat_daily_message_cap: int = 2000  # per tenant; tenant settings may set a lower/higher cap
 
+    # Human handoff and channels.
+    # 32 random bytes, base64 (python -c "import os,base64;print(base64.b64encode(os.urandom(32))
+    # .decode())"). Encrypts stored secrets such as Telegram bot tokens; required to store one.
+    secrets_encryption_key: str = ""
+    telegram_api_base: str = "https://api.telegram.org"
+    # Link in staff alerts; {conversation_id} is filled in.
+    admin_conversation_url: str = "http://localhost:8000/v1/conversations/{conversation_id}"
+    chat_poll_per_visitor_per_minute: int = 30  # widget polling for staff replies
+
     # Built widget bundle (web/widget/dist), served at /widget.js. A mounted volume in Docker.
     widget_dist_dir: str = "../web/widget/dist"
 

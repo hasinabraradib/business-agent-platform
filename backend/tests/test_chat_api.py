@@ -158,7 +158,7 @@ async def test_conversation_and_messages_are_persisted(client, cafe, owner_engin
         "web",
         "visitor-1",
     )
-    assert conversation.status == "open"
+    assert conversation.status == "ai"
     assert [(m.role, m.outcome) for m in messages] == [("user", None), ("assistant", "answered")]
     assistant = messages[1]
     assert assistant.model == "fake:fake-chat"

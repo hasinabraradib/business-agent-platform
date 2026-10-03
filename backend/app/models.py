@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Computed,
@@ -30,9 +31,17 @@ from app.db import Base
 ApiKeyKind = Literal["admin", "widget"]
 DocumentStatus = Literal["pending", "processing", "ready", "failed"]
 DOCUMENT_STATUSES: tuple[str, ...] = ("pending", "processing", "ready", "failed")
-MessageRole = Literal["user", "assistant"]
-# no_answer feeds the knowledge-gaps report; error marks a failed generation.
-MessageOutcome = Literal["answered", "action", "no_answer", "smalltalk", "error"]
+MessageRole = Literal["user", "assistant", "staff"]  # staff: a team member, never the model
+# no_answer feeds the knowledge-gaps report; error marks a failed generation; handoff marks the
+# acknowledgement sent when the conversation was handed to a person.
+MessageOutcome = Literal["answered", "action", "no_answer", "smalltalk", "handoff", "error"]
+# ai: the assistant answers. waiting_human: a person was asked for and the assistant is silent.
+# human: a team member has replied (assistant still silent). resolved: closed by the team; the
+# next customer message reopens it with the assistant.
+ConversationStatus = Literal["ai", "waiting_human", "human", "resolved"]
+CONVERSATION_STATUSES: tuple[str, ...] = ("ai", "waiting_human", "human", "resolved")
+HUMAN_STATUSES: frozenset[str] = frozenset({"waiting_human", "human"})
+CHANNELS: tuple[str, ...] = ("web", "telegram")
 # Fixed by the chunks.embedding column; every embedding provider must return this many dims.
 EMBEDDING_DIMENSIONS = 768
 
@@ -186,20 +195,28 @@ class Conversation(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     __tablename__ = "conversations"
     __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
     __table_args__ = (
-        CheckConstraint("channel IN ('web')", name="conversations_channel_check"),
-        CheckConstraint("status IN ('open', 'closed')", name="conversations_status_check"),
+        CheckConstraint("channel IN ('web', 'telegram')", name="conversations_channel_check"),
+        CheckConstraint(
+            "status IN ('ai', 'waiting_human', 'human', 'resolved')",
+            name="conversations_status_check",
+        ),
         UniqueConstraint("tenant_id", "id", name="conversations_tenant_id_id_key"),
         Index("ix_conversations_tenant_updated", "tenant_id", text("updated_at DESC")),
+        Index("ix_conversations_tenant_status_updated", "tenant_id", "status", "updated_at"),
     )
 
     channel: Mapped[str] = mapped_column(
         String(16), nullable=False, default="web", server_default="web"
     )
-    # Chosen by the website widget (e.g. a random id kept in the browser); not authenticated.
+    # web: chosen by the widget (a random id kept in the browser), not authenticated.
+    # telegram: "tg:<chat id>", set from the verified Telegram update.
     visitor_id: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="open", server_default="open"
+        String(16), nullable=False, default="ai", server_default="ai"
     )
+    customer_name: Mapped[str | None] = mapped_column(String(120))  # Telegram first/last name
+    handoff_reason: Mapped[str | None] = mapped_column(Text)
+    handoff_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
@@ -229,10 +246,10 @@ class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
             unique=True,
             postgresql_where=text("client_message_id IS NOT NULL"),
         ),
-        CheckConstraint("role IN ('user', 'assistant')", name="messages_role_check"),
+        CheckConstraint("role IN ('user', 'assistant', 'staff')", name="messages_role_check"),
         CheckConstraint(
             "outcome IS NULL OR outcome IN "
-            "('answered', 'action', 'no_answer', 'smalltalk', 'error')",
+            "('answered', 'action', 'no_answer', 'smalltalk', 'handoff', 'error')",
             name="messages_outcome_check",
         ),
         Index("ix_messages_conversation_created", "conversation_id", "created_at"),
@@ -474,3 +491,53 @@ class WebhookDelivery(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class TelegramChannel(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    """A tenant's Telegram bot. The token is stored encrypted (app.secret_box, AES-GCM bound to
+    the tenant id); the webhook secret only as a sha256 hash, since Telegram sends it back."""
+
+    __tablename__ = "telegram_channels"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
+    __table_args__ = (UniqueConstraint("tenant_id", name="telegram_channels_tenant_key"),)
+
+    bot_token_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    bot_username: Mapped[str | None] = mapped_column(String(64))
+    webhook_secret_hash: Mapped[str | None] = mapped_column(String(64))
+    # Where staff alerts go; only this chat may answer customers through the bot.
+    staff_chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class TelegramUpdate(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    """Telegram update ids already accepted, so a redelivered update is processed once."""
+
+    __tablename__ = "telegram_updates"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "update_id", name="telegram_updates_update_key"),
+    )
+
+    update_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class StaffAlert(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    """A staff alert sent to Telegram; a staff reply to it answers this conversation."""
+
+    __tablename__ = "staff_alerts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "conversation_id"],
+            ["conversations.tenant_id", "conversations.id"],
+            ondelete="CASCADE",
+            name="staff_alerts_conversation_fkey",
+        ),
+        UniqueConstraint(
+            "tenant_id", "chat_id", "telegram_message_id", name="staff_alerts_message_key"
+        ),
+    )
+
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)

@@ -50,6 +50,9 @@ os.environ["EMBEDDING_PROVIDER"] = "fake"
 os.environ["GEMINI_API_KEY"] = ""
 os.environ["CHAT_PROVIDER"] = "fake"
 os.environ["RERANKER"] = "noop"
+# A fixed test-only key (never used outside tests) for encrypted secrets such as bot tokens.
+os.environ["SECRETS_ENCRYPTION_KEY"] = "dGVzdC1vbmx5LWtleS1ub3QtYS1yZWFsLXNlY3JldCE="
+os.environ["TELEGRAM_API_BASE"] = "https://telegram.test"
 
 # ...or the network at all: only loopback hosts resolve (Postgres and Redis run locally).
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}

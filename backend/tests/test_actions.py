@@ -113,6 +113,21 @@ async def configure_webhook(owner_engine, tenant_id) -> None:
 # --- reservations ------------------------------------------------------------------------------
 
 
+async def test_read_back_is_not_a_failed_answer_whatever_the_models_tag(client, cafe, provider):
+    # gpt-oss tagged the read-back [[answered]]; with nothing cited it became no_answer and the
+    # customer got the fallback contact under "Shall I book it?".
+    def answered_read_back(request, model):
+        if request.messages[-1].role == "tool":
+            return "[[answered]]\nRahim, 4 people tomorrow at 8 pm. Shall I book it?"
+        return Scripted(tool_calls=[("create_reservation", BOOKING)])
+
+    provider.responder = answered_read_back
+    body = await say(client, cafe, "table for 4 tomorrow 8pm, Rahim 01711-000000")
+    assert body["retrieval"]["tools"][0]["status"] == "needs_confirmation"
+    assert body["outcome"] == "smalltalk"
+    assert CONTACT not in body["reply"]
+
+
 async def test_booking_happens_only_after_confirmation(client, cafe, owner_engine, job_queue):
     await configure_webhook(owner_engine, cafe.id)
     first = await say(client, cafe, "table for 4 tomorrow 8pm, Rahim 01711-000000")
@@ -360,3 +375,12 @@ def test_lead_guidance_never_invents_a_follow_up_time() -> None:
         "Cafe", {"follow_up_promise": "within one working day"}
     )
     assert "within one working day" in tool.guidance(promised)
+
+
+def test_reservation_guidance_states_the_party_limit_and_hours() -> None:
+    # Without them the real model said "Sure!" to 15 people and asked for their details.
+    tool = registry().get("create_reservation")
+    settings = TenantChatSettings.from_tenant("Cafe", restaurant_settings(max_online_party_size=6))
+    guidance = tool.guidance(settings)
+    assert "at most 6 people" in guidance
+    assert "Fri 14:30-23:00" in guidance and "don't collect details" in guidance

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.chat.filters import CitationFilter, OutcomeTagFilter, decide_outcome
+from app.chat.filters import CitationFilter, OutcomeTagFilter, PlainTextFilter, decide_outcome
 from app.chat.prompts import (
     CITE_REMINDER,
     ContextChunk,
@@ -12,6 +12,7 @@ from app.chat.prompts import (
     customer_block,
     local_time,
     mentions_contact,
+    reply_language,
     search_results_block,
     system_prompt,
     uses_bengali_script,
@@ -244,3 +245,61 @@ def test_search_results_end_with_a_citation_reminder_outside_the_data_tags() -> 
     block = search_results_block([ContextChunk(1, "Menu", "row 1", "Kacchi 480")], "n0nce")
     assert block.endswith(f"</search-results-n0nce>\n{CITE_REMINDER}")
     assert CITE_REMINDER not in search_results_block([], "n0nce")  # nothing to cite
+
+
+@pytest.mark.parametrize(
+    ("message", "language"),
+    [
+        # every customer message from evals/chat_script.py
+        ("hi", "english"),
+        ("apnara ki ekhon khola?", "banglish"),
+        ("kacchi koto?", "banglish"),
+        ("ota ki jhal?", "banglish"),
+        ("thanks bhai", "banglish"),
+        ("Which dishes have nuts?", "english"),
+        ("are you a real person?", "english"),
+        ("amar ekta table lagbe 6 jon er, kal raat e", "banglish"),
+        ("what's the weather in Chittagong?", "english"),
+        ("শুক্রবার আপনারা কখন খোলেন?", "bengali"),
+        ("jamdani saree ache?", "banglish"),
+        ("return policy ki?", "banglish"),
+        ("500 takar niche ki ki ache?", "banglish"),
+        ("I'd like to book a table for 4 people tomorrow at 8 pm", "english"),
+        ("My name is Rahim Uddin, phone 01711-000111", "english"),
+        ("yes, please confirm", "english"),
+        ("Can I book a table for 15 people tomorrow at 8 pm?", "english"),
+        ("5000 takar niche saree ache?", "banglish"),
+        ("Where is my order JL-10232? The last 4 digits of my phone are 6543", "english"),
+        ("I want 50 sarees for a wedding, can someone call me?", "english"),
+    ],
+)
+def test_reply_language(message, language) -> None:
+    assert reply_language(message) == language
+
+
+def test_customer_block_ends_with_the_reply_language_outside_the_tags() -> None:
+    # gpt-oss answered English questions in Banglish after Banglish turns.
+    block = customer_block("Which dishes have nuts?", "n0nce", [])
+    assert block.endswith("</customer-message-n0nce>\nReply in English.")
+
+
+def test_decide_outcome_for_a_proposal_awaiting_confirmation() -> None:
+    assert decide_outcome("answered", [], False, proposed=True) == "smalltalk"
+    assert decide_outcome("answered", [], True, proposed=True) == "no_answer"  # searched, uncited
+    assert decide_outcome("smalltalk", [], False, action=True, proposed=True) == "action"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Reference **R\u2011K7C7FM**. See you!", "Reference R-K7C7FM. See you!"),
+        ("2 * 3 = 6", "2 * 3 = 6"),  # a single star is text
+        ("Ends with *", "Ends with *"),
+    ],
+)
+def test_plain_text_filter(text, expected) -> None:
+    for chunk_size in (1, 2, len(text)):  # "**" split across stream chunks
+        plain = PlainTextFilter()
+        assert _run(plain, [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]) == (
+            expected
+        )

@@ -84,7 +84,14 @@ class CreateReservationTool(WriteTool):
         )
 
     def guidance(self, settings) -> str:
+        # Stated up front: without them the model said "Sure!" to 15 people and collected
+        # their details before the tool refused.
+        hours = describe_hours(settings) if settings.opening_hours else "not set"
         return (
+            f"- Online bookings take at most {settings.max_online_party_size} people, within "
+            f"these hours (last booking 30 minutes before closing): {hours}. For a larger party "
+            "or a time outside these hours, don't collect details: say so and give the contact. "
+            "A time after midnight 'tonight' (e.g. 3 am) is on the next date.\n"
             "- Reservations: collect date, time, party size, name and phone conversationally "
             "(ask only for what is missing), then call create_reservation. It answers NOT DONE "
             "YET with the details: read them back and ask the customer to confirm. When they "

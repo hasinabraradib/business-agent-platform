@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.chat.filters import CitationFilter, OutcomeTagFilter, decide_outcome
+from app.chat.filters import CitationFilter, OutcomeTagFilter, PlainTextFilter, decide_outcome
 from app.chat.prompts import (
     ContextChunk,
     HistoryTurn,
@@ -199,6 +199,7 @@ class ChatService:
 
         tags = OutcomeTagFilter()
         citations = CitationFilter(context.valid_markers)  # grows as searches find sources
+        plain = PlainTextFilter()
         prefer: str | None = None
         error: str | None = None
         try:
@@ -223,7 +224,7 @@ class ChatService:
                     calls = []
                     async for event in self._model_events(request, prefer):
                         if isinstance(event, TextDelta):
-                            text = citations.feed(tags.feed(event.text))
+                            text = citations.feed(plain.feed(tags.feed(event.text)))
                             if text:
                                 if "first_token" not in run.timings:
                                     run.timings["first_token"] = run.ms_since(run.started)
@@ -256,7 +257,7 @@ class ChatService:
                 yield event
             return
 
-        tail = citations.feed(tags.flush()) + citations.flush()
+        tail = citations.feed(plain.feed(tags.flush()) + plain.flush()) + citations.flush()
         if tail:
             if "first_token" not in run.timings:
                 run.timings["first_token"] = run.ms_since(run.started)
@@ -268,6 +269,7 @@ class ChatService:
             bool(context.searches),
             action=bool(context.actions),
             lookup=context.lookups > 0,
+            proposed=any(r.status == "needs_confirmation" for r in context.records),
         )
         contact = turn.settings.fallback_contact
         if outcome == "no_answer" and contact and not mentions_contact("".join(run.reply), contact):

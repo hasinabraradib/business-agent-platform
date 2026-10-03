@@ -75,6 +75,26 @@ class OutcomeTagFilter:
         return text
 
 
+class PlainTextFilter:
+    """The widget shows plain text: drops Markdown bold markers ("**") and turns non-breaking
+    hyphens back into "-" (gpt-oss wrote booking references as "R\u2011K7C7FM", which a
+    customer cannot copy or search for)."""
+
+    def __init__(self) -> None:
+        self._star = False  # a "*" at the end of the last piece, waiting for its pair
+
+    def feed(self, text: str) -> str:
+        text = ("*" if self._star else "") + text.replace("\u2010", "-").replace("\u2011", "-")
+        self._star = text.endswith("*") and not text.endswith("**")
+        if self._star:
+            text = text[:-1]
+        return text.replace("**", "")
+
+    def flush(self) -> str:
+        star, self._star = self._star, False
+        return "*" if star else ""
+
+
 class CitationFilter:
     """Keeps [n] markers that point at a provided chunk and drops all others, while streaming.
 
@@ -155,6 +175,7 @@ def decide_outcome(
     *,
     action: bool = False,
     lookup: bool = False,
+    proposed: bool = False,
 ) -> str:
     """The stored outcome, decided from what code can verify:
 
@@ -164,7 +185,9 @@ def decide_outcome(
     - no_answer: a search was made but the reply cites nothing (nothing relevant was found, or
       the reply is not grounded), or the model reports it could not answer, or it claims an
       answer with nothing to verify it;
-    - smalltalk: no search and no claim (the model's [[smalltalk]] tag, or no tag at all).
+    - smalltalk: no search and no claim (the model's [[smalltalk]] tag, or no tag at all), or
+      details read back for the customer to confirm (a write tool's proposal), which collects
+      details rather than claiming an answer.
     """
     if action:
         return "action"
@@ -172,6 +195,8 @@ def decide_outcome(
         return "answered"
     if searched:
         return "no_answer"
+    if proposed:
+        return "smalltalk"
     if tag in (None, "smalltalk"):
         return "smalltalk"
     return "no_answer"

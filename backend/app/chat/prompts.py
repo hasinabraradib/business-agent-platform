@@ -68,6 +68,7 @@ How you sound
   Banglish, the way people in Dhaka text (e.g. "Ji, amra ekhon khola, raat 11 ta porjonto."),
   mixing in everyday English words, never stiff transliteration. Keep the whole reply in that
   one script: never switch from Banglish to Bengali script (or back) mid-reply.
+- Plain text only: no Markdown (no ** bold, # headings or tables).
 - Say times and prices the way people do ("raat 11 ta", "8 pm", "480 taka"), not "23:00".
 - Give the contact details only when you can't help or the customer asks for them.
 - Never say "As an AI", "based on the information provided" or "according to our records",
@@ -130,15 +131,49 @@ def search_results_block(chunks: list[ContextChunk], nonce: str) -> str:
     return f"{block}\n{CITE_REMINDER}"
 
 
+# Everyday romanized-Bengali words. gpt-oss answered English questions in Banglish (and
+# Banglish in Bengali script) when the system prompt alone asked it to match the customer.
+BANGLISH_WORDS = {
+    "ami", "amra", "amar", "amader", "apni", "apnara", "apnar", "apnader", "tumi", "tomar",
+    "ki", "keno", "kemon", "kothay", "kobe", "koto", "koyta", "kon", "ache", "achen",
+    "ase", "nai", "nei", "hobe", "hoy", "lagbe", "chai", "dorkar", "korte", "korben", "korun",
+    "den", "dao", "ekta", "ekhon", "kal", "aj", "ajke", "raat", "takar", "taka", "niche",
+    "upore", "theke", "porjonto", "bhai", "apu", "vai", "jon", "er", "ta", "ota", "eta",
+    "jhal", "khola", "bondho", "thik", "accha", "acha", "valo", "bhalo", "na", "ar", "o",
+    "kintu", "naki", "jodi", "dhonnobad", "shathe", "sathe", "jonno", "diye",
+}  # fmt: skip
+LATIN_WORD = re.compile(r"[a-z]+")
+
+
+def reply_language(message: str) -> str:
+    """'bengali' (Bengali script), 'banglish' (Bengali in Latin letters) or 'english'."""
+    if uses_bengali_script(message):
+        return "bengali"
+    words = LATIN_WORD.findall(message.casefold())
+    hits = sum(word in BANGLISH_WORDS for word in words)
+    if hits and (hits >= 2 or hits / len(words) >= 0.2):
+        return "banglish"
+    return "english"
+
+
+LANGUAGE_HINTS = {
+    "english": "Reply in English.",
+    "banglish": "Reply in Banglish (Bengali in Latin letters, the way people in Dhaka text).",
+    "bengali": "Reply in Bengali script.",
+}
+
+
 def customer_block(message: str, nonce: str, earlier: list[ContextChunk]) -> str:
-    """The current customer message, preceded by sources cited earlier in the conversation."""
+    """The current customer message, preceded by sources cited earlier in the conversation and
+    followed by the reply language detected from it (outside the data tags)."""
     sources = ""
     if earlier:
         sources = (
             f"<earlier-sources-{nonce}>\nSources already found earlier in this conversation "
             f"(cite them by number):\n{_passages(earlier)}\n</earlier-sources-{nonce}>\n\n"
         )
-    return f"{sources}<customer-message-{nonce}>\n{message}\n</customer-message-{nonce}>"
+    hint = LANGUAGE_HINTS[reply_language(message)]
+    return f"{sources}<customer-message-{nonce}>\n{message}\n</customer-message-{nonce}>\n{hint}"
 
 
 def history_user_block(message: str, nonce: str) -> str:

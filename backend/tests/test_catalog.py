@@ -212,6 +212,17 @@ async def test_query_catalog_in_stock_filter(
     assert names(under) == ["Tangail Taant Saree"]
 
 
+async def test_in_stock_filter_keeps_rows_without_a_stock_column(app_engine, menu) -> None:
+    # The real model sent in_stock=true for "500 takar niche ki ki ache?"; the menu has no
+    # stock column, so every row was hidden and the reply said nothing was under 500.
+    tenant, _ = menu
+    filtered, _, _ = await query(app_engine, tenant, max_price=500, in_stock=True)
+    unfiltered, _, _ = await query(app_engine, tenant, max_price=500)
+    assert names(filtered) == names(unfiltered) != []
+    out_of_stock, _, _ = await query(app_engine, tenant, in_stock=False)
+    assert names(out_of_stock) == []  # unknown stock is not "out of stock" either
+
+
 async def test_query_catalog_empty_result(app_engine, menu) -> None:
     tenant, _ = menu
     content, record, context = await query(app_engine, tenant, text="pizza")

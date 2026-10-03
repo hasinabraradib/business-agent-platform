@@ -27,7 +27,9 @@ class QueryCatalogArgs(ToolArgs):
     category: str | None = Field(default=None, max_length=60, description="e.g. 'Rice', 'Sarees'")
     min_price: float | None = Field(default=None, ge=0)
     max_price: float | None = Field(default=None, ge=0, description="e.g. 500 for 'under 500'")
-    in_stock: bool | None = Field(default=None, description="true: only items in stock")
+    in_stock: bool | None = Field(
+        default=None, description="true: leave out items marked out of stock"
+    )
     attributes: list[AttributeFilter] | None = Field(
         default=None,
         max_length=5,
@@ -83,8 +85,12 @@ class QueryCatalogTool(Tool):
             query = query.where(CatalogItem.price >= args.min_price)
         if args.max_price is not None:
             query = query.where(CatalogItem.price <= args.max_price)
-        if args.in_stock is not None:
-            query = query.where(CatalogItem.in_stock.is_(args.in_stock))
+        # A catalogue without a stock column (a menu) has no stock flag: only rows marked out
+        # of stock are left out, or in_stock=true would hide the whole menu.
+        if args.in_stock is True:
+            query = query.where(CatalogItem.in_stock.is_not(False))
+        elif args.in_stock is False:
+            query = query.where(CatalogItem.in_stock.is_(False))
         for attribute in args.attributes or []:
             key = attribute.name.strip().lower().replace(" ", "_")
             query = query.where(CatalogItem.attributes[key].astext.ilike(_like(attribute.contains)))

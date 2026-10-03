@@ -10,7 +10,13 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.channels.telegram import TelegramError, bot_token, load_channel, make_client
+from app.channels.telegram import (
+    TelegramError,
+    bot_token,
+    load_channel,
+    make_client,
+    telegram_text,
+)
 from app.config import get_settings
 from app.models import Conversation, Message, StaffAlert
 from app.tenancy import tenant_db
@@ -38,7 +44,7 @@ def alert_text(conversation: Conversation, recent: list[Message], kind: str, lin
     lines.append("")
     lines.append("Last messages:")
     for message in recent:
-        text = " ".join(message.content.split())
+        text = " ".join(telegram_text(message.content).split())  # no [n] markers or Markdown
         if len(text) > SNIPPET_CHARS:
             text = text[: SNIPPET_CHARS - 1] + "…"
         lines.append(f"{SPEAKERS.get(message.role, message.role)}: {text}")

@@ -481,3 +481,16 @@ def test_offline_model_hands_off_in_banglish() -> None:
     )
     script = offline_responder(request, "fake-chat")
     assert script.tool_calls[0][0] == "request_human"
+
+
+def test_alert_snippets_are_plain_text() -> None:
+    from types import SimpleNamespace
+
+    from app.channels.alerts import alert_text
+
+    conversation = SimpleNamespace(
+        channel="telegram", customer_name="Rahim", handoff_reason="late order"
+    )
+    recent = [SimpleNamespace(role="assistant", content="Kacchi is **480 taka** [1][2].")]
+    text = alert_text(conversation, recent, "handoff", "http://x/1")
+    assert "Assistant: Kacchi is 480 taka." in text and "[1]" not in text and "**" not in text

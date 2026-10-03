@@ -28,7 +28,12 @@ backend/app/          FastAPI app: main.py (create_app), config.py (Settings), d
                       and ChatChain (fast failover across models/providers)
   chat/               tool loop (service.py), ToolRegistry, WriteTool + search_knowledge
                       (tools.py), prompts, stream filters, outcomes, rate limits, confirm.py
-  chat/actions/       query_catalog, create_reservation, lookup_order, capture_lead
+  chat/actions/       query_catalog, create_reservation, lookup_order, capture_lead,
+                      request_human
+  handoff.py          conversation states, the handoff acknowledgement, staff actions
+  channels/           pipeline.py (every channel's customer turn), outbound.py (staff
+                      messages to the customer's channel), telegram.py, alerts.py
+  secret_box.py       AES-GCM encryption for stored secrets (SECRETS_ENCRYPTION_KEY)
   webhooks/           event recording, HMAC signing, worker delivery with retries
   worker.py           arq WorkerSettings (`arq app.worker.WorkerSettings`)
 backend/alembic/      migrations (async env.py; runs as OWNER_DATABASE_URL)
@@ -110,6 +115,20 @@ cd web/widget && npm ci && npm run check   # widget: types, lint, tests, build +
   `conftest.py` forces `CHAT_PROVIDER=fake`.
 - Webhook events are recorded with `record_event` inside the write's transaction and enqueued
   after commit. Outbound HTTP goes through `post_json`/`fetch_url` (SSRF checks, pinned IP).
+- Channels: every customer message, from any channel, goes through
+  `app.channels.pipeline.accept()`. It alone decides whether the assistant may answer. While a
+  conversation is `waiting_human` or `human`, no model is called; never move that check into
+  a prompt or a single channel. A new channel is an adapter that calls `accept()`, runs the
+  returned turn through `ChatService`, and formats the reply for its medium.
+- The handoff acknowledgement and anything else promising times or availability is written by
+  code from tenant settings (`app/handoff.py`), never by the model.
+- Secrets the platform must read back (bot tokens) are stored with `app.secret_box` (bound to the
+  tenant id). Secrets it only checks (webhook secret tokens) are stored as hashes and compared
+  with `hmac.compare_digest`. Never log or return either. Public endpoints that resolve a tenant
+  (the Telegram webhook) answer every failure the same way, so they never reveal which tenants
+  exist.
+- Telegram in tests: swap `app.channels.telegram.CLIENT_FACTORY` for a client over
+  `httpx.MockTransport` (see `tests/test_telegram.py`); never call the real Bot API.
 - New chat providers go in `app/llm/` only (subclass + registry entry).
 - Widget: never use `innerHTML`/`insertAdjacentHTML`; build DOM with `createElement` and
   `textContent` (`src/render.ts` for any server or model text, http/https links only). Colours,

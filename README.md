@@ -209,6 +209,8 @@ the model left it out). The outcome is decided in code from what can be verified
 - **`no_answer`:** a search was made but nothing was cited (nothing relevant, or an ungrounded
   reply), the model reported it could not help (off-topic, or a booking it can't make), or it
   claimed an answer with nothing to verify it. These feed the knowledge-gaps report.
+- **`handoff`:** the conversation was handed to a person this turn (see
+  [Human handoff](#human-handoff)).
 - **`action`:** a write tool completed in this turn (a reservation booked, a lead saved).
 - **`smalltalk`:** no search and no claim.
 - **`error`:** generation failed.
@@ -297,8 +299,8 @@ Measured so far:
 The model chooses tools; code decides what they may do. Each tenant's `enabled_tools` setting
 lists the tools offered to its model. A tool not in the list is never offered, and a call to it
 is refused (`not_allowed`). The demo restaurant has `search_knowledge`, `query_catalog`,
-`create_reservation` and `capture_lead`. The demo shop has `search_knowledge`, `query_catalog`,
-`lookup_order` and `capture_lead`.
+`create_reservation`, `capture_lead` and `request_human`. The demo shop has `search_knowledge`,
+`query_catalog`, `lookup_order`, `capture_lead` and `request_human`.
 
 Rules for every tool:
 - **Validated arguments:** arguments are checked by a Pydantic model (unknown fields
@@ -317,6 +319,7 @@ Rules for every tool:
 | Tool | Does | Arguments |
 |---|---|---|
 | `search_knowledge` | Searches the business's documents (see [Chat](#chat)) | `query` |
+| `request_human` | Hands the conversation to a person (see [Human handoff](#human-handoff)) | `reason` |
 | `query_catalog` | Lists and filters catalogue rows: menus, product lists | `text`, `category`, `min_price`, `max_price`, `in_stock`, `attributes` (name contains value), `sort`, `limit` (1–25) |
 | `create_reservation` | Books a table (write) | `date`, `time` (HH:MM), `party_size`, `name`, `phone`, `notes` |
 | `lookup_order` | Shows an order's status | `order_number`, `phone_last4` |
@@ -396,7 +399,9 @@ will be in touch, with no time.
 
 When a reservation is booked or a lead is saved, an event is recorded in the same transaction
 as the write. The worker then POSTs it to the tenant's webhook URL. Events are
-`reservation.created` and `lead.created`, with this body:
+`reservation.created`, `lead.created`, `handoff.requested` and `handoff.resolved` (the last two
+carry `conversation_id`, `channel`, `customer_name`, and `reason` or the new `status`). A
+reservation looks like this:
 
 ```json
 {"id": "<delivery id>", "type": "reservation.created", "created_at": "2026-10-03T13:31:02Z",
@@ -434,6 +439,92 @@ Delivery rules:
 appends each event to a Google Sheet and sends an email alert. It is checked only as valid n8n
 export JSON and has **not** been tested end to end.
 
+## Human handoff
+
+A customer can be handed to a person on the business's team. The model asks for this with the
+`request_human` tool; everything after that is decided in code.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ai
+    ai --> waiting_human: request_human (asked for a person, upset,\nor something no tool can do)
+    waiting_human --> human: a team member replies
+    waiting_human --> ai: hand back
+    human --> ai: hand back
+    ai --> resolved: resolve
+    waiting_human --> resolved: resolve
+    human --> resolved: resolve
+    resolved --> ai: the customer writes again
+```
+
+- **When:** the guidance asks the model to call `request_human` when the customer asks for a
+  person, is clearly upset, or wants something no tool can do that the team could sort out (a
+  complaint, a refund, a special request). For a fact it simply can't find, it still says so and
+  gives the contact. It never claims to be human or poses as the team.
+- **The acknowledgement** is written by code, not the model, in the customer's language
+  (English, Banglish or Bengali script). It says whether the team is online now or when it is
+  back, from the tenant's `opening_hours` and `timezone`, and uses its `follow_up_promise`
+  (e.g. "within one working day") if it has one. With no hours set it says neither. The turn
+  ends there, with outcome `handoff`, and costs no second model call.
+- **Silence is enforced in code.** While a conversation is `waiting_human` or `human`, the
+  channel pipeline stores each customer message, alerts staff, and answers with a silent response
+  (`"silent": true`). No model is called, whatever the prompt says.
+- **Staff replies** are messages with role `staff`. The widget shows them as "Team member", with
+  no assistant name. The model sees them in its history after a hand-back, marked as the team's.
+- **Events:** `handoff.requested` and `handoff.resolved` (hand back or resolve), signed like every
+  webhook.
+
+Admin endpoints (admin key):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/conversations?status=waiting_human` | Customers waiting for a person (also `ai`, `human`, `resolved`) |
+| `GET /v1/conversations/{id}` | The conversation, with customer, assistant and staff messages |
+| `POST /v1/conversations/{id}/messages` | Reply as a team member (`{"text": ...}`); the chat becomes `human` |
+| `POST /v1/conversations/{id}/hand-back` | The assistant answers again |
+| `POST /v1/conversations/{id}/resolve` | Close it; a new customer message reopens it with the assistant |
+
+## Telegram
+
+Telegram is a second customer channel. The widget and Telegram feed the same pipeline
+(`app/channels/pipeline.py`), so both get the same tools, handoff, limits and outcome labels.
+
+- **Webhook:** `POST /v1/channels/telegram/{tenant_id}/webhook`, called by Telegram.
+  - **Verification:** the `X-Telegram-Bot-Api-Secret-Token` header is checked against a stored
+    hash. An unknown tenant, a tenant without a bot and a wrong secret all get the same 404.
+  - **Dedupe:** each `update_id` is processed once.
+  - **Visitors:** the chat id becomes the visitor (`tg:<chat id>`), with one ongoing conversation
+    per chat. Only private chats and text messages are answered.
+- **Replies** are plain text: no `parse_mode`, Markdown or citation markers. They are split at
+  natural breaks to fit Telegram's 4,096 characters.
+- **Limits:** the widget's limits apply per bot, per chat and per day. When a customer hits one,
+  the limit notice is sent at most once a minute.
+- **Secrets:** the bot token is stored encrypted (AES-256-GCM under `SECRETS_ENCRYPTION_KEY`,
+  bound to the tenant). The webhook secret is stored only as a sha256 hash, and registering the
+  webhook again rotates it.
+- **Staff alerts:** when a customer is handed off, or writes again while waiting, the worker
+  sends the tenant's staff chat their name, the last messages and a link (`ADMIN_CONVERSATION_URL`).
+  Replying to that alert in the staff chat sends the reply to the customer as a team member's
+  message. Only the configured staff chat can do this; anything else there is ignored.
+
+Setup in five steps:
+1. **Create the bot:** message [@BotFather](https://t.me/BotFather), send `/newbot` and keep the
+   token it gives you.
+2. **Find the staff chat id:** add the bot to your staff group (or message it yourself) and send
+   any message. Then open `https://api.telegram.org/bot<TOKEN>/getUpdates` and read
+   `message.chat.id`; group ids are negative. Do this before step 4, because `getUpdates` stops
+   working once a webhook is set.
+3. **Store the token:** set `SECRETS_ENCRYPTION_KEY` in `.env` (the command is in
+   `.env.example`), restart the stack, then call `PUT /v1/channels/telegram` with an admin key
+   and `{"bot_token": "...", "staff_chat_id": -100...}`. The token is checked with Telegram
+   first.
+4. **Register the webhook:** call `POST /v1/channels/telegram/webhook` with
+   `{"public_base_url": "https://your-api.example.com"}`. Telegram only calls https URLs; for
+   local testing, use a tunnel such as cloudflared or ngrok.
+5. **Test it:** message the bot, then ask for a person. The staff chat gets an alert; reply to
+   it, and the customer gets your message. Bots in groups with privacy mode on still receive
+   replies to their own messages, which is all the staff chat needs.
+
 ## Widget
 
 The embeddable chat widget lives in `web/widget/`: TypeScript with no UI framework, bundled into
@@ -447,7 +538,9 @@ it at `/widget.js`, with an ETag and a 5-minute cache. A business embeds it with
 `data-api` sets the API base URL if it differs from where `widget.js` is served. The widget
 loads `GET /v1/widget/config` when first opened, then chats through `POST /v1/chat`, reading the
 response body as Server-Sent Events. (`EventSource` cannot send a POST or an `Authorization`
-header.)
+header.) While a person handles the chat, the widget polls `GET /v1/chat/updates` every 5 seconds
+(only while the panel is open) and shows team replies as "Team member". A silent turn leaves no
+assistant bubble.
 
 **Settings** (in `tenants.settings`, returned by `/v1/widget/config`): `assistant_name`,
 `business_name`, `greeting`, `accent_color` (`#RRGGBB`; default lime `#C5EE4F`) and up to four

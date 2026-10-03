@@ -1,7 +1,9 @@
 """Chat models behind one interface, chained for failover.
 
 CHAT_MODELS lists "provider:model" candidates in order (primary first). Providers: gemini,
-openai_compat (any OpenAI-compatible endpoint, via OPENAI_COMPAT_*), fake (offline). To add a
+openai_compat (any OpenAI-compatible endpoint, via OPENAI_COMPAT_*), fake (offline). When
+OPENAI_COMPAT_MODEL is set and CHAT_MODELS has no openai_compat entry, it goes first: the
+OpenAI-compatible model is primary and the CHAT_MODELS entries are its fallbacks. To add a
 provider: subclass ChatProvider in this package and register it in PROVIDERS.
 """
 
@@ -70,7 +72,7 @@ class LLMSettings(BaseSettings):
     openai_compat_base_url: str = ""
     openai_compat_api_key: str = ""
     openai_compat_model: str = ""
-    openai_compat_reasoning_effort: str = ""  # e.g. "minimal"; empty: not sent
+    openai_compat_reasoning_effort: str = ""  # e.g. "low"; empty: not sent
 
 
 PROVIDERS: dict[str, Callable[[LLMSettings], ChatProvider | None]] = {
@@ -95,7 +97,7 @@ def _entries(settings: LLMSettings) -> list[tuple[str, str]]:
             entries.append((provider.strip(), model.strip()))
     configured = settings.openai_compat_model and settings.openai_compat_base_url
     if configured and not any(p == "openai_compat" for p, _ in entries):
-        entries.append(("openai_compat", settings.openai_compat_model))  # cross-provider fallback
+        entries.insert(0, ("openai_compat", settings.openai_compat_model))  # primary
     return entries
 
 

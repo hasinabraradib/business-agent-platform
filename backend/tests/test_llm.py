@@ -375,6 +375,16 @@ async def test_openai_compat_error_mapping(response, error, match) -> None:
         assert not isinstance(exc_info.value, ChatUnavailable)
 
 
+async def test_openai_compat_rate_limit_carries_retry_after() -> None:
+    # Groq's per-minute token limit answers 429 with "Retry-After: 5"; the chain uses it.
+    response = httpx.Response(
+        429, headers={"retry-after": "5"}, json={"error": {"message": "TPM limit"}}
+    )
+    with pytest.raises(ChatUnavailable) as exc_info:
+        await collect(mocked(OpenAICompatChatProvider, lambda r: response))
+    assert exc_info.value.retry_after == 5.0
+
+
 async def test_openai_compat_connection_errors_are_unavailable() -> None:
     def handler(request):
         raise httpx.ConnectError("refused")
@@ -422,6 +432,34 @@ async def test_chain_fails_over_on_unavailable_and_cools_the_failed_model() -> N
     assert len(down.calls) == 2
 
 
+class _RateLimited(FakeChatProvider):
+    def __init__(self, retry_after):
+        super().__init__(name="limited")
+        self.retry_after, self.tries = retry_after, 0
+
+    async def stream(self, request, *, model):
+        self.tries += 1
+        raise ChatUnavailable("429", model=f"limited:{model}", retry_after=self.retry_after)
+        yield  # pragma: no cover
+
+
+async def test_chain_cooldown_is_no_longer_than_the_providers_retry_after() -> None:
+    now = [0.0]
+    limited = _RateLimited(retry_after=5)
+    chain = ChatChain(
+        [Candidate(limited, "m1"), Candidate(_fake("fallback", Scripted("ok")), "m2")],
+        cooldown_seconds=60,
+        clock=lambda: now[0],
+    )
+    await collect_chain(chain)
+    now[0] = 3
+    await collect_chain(chain)  # still within Retry-After: skipped
+    assert limited.tries == 1
+    now[0] = 6
+    await collect_chain(chain)  # a 60 s cool-down would still skip it here
+    assert limited.tries == 2
+
+
 async def test_chain_prefers_the_model_already_used_in_this_turn() -> None:
     a, b = _fake("a", Scripted("from a")), _fake("b", Scripted("from b"))
     chain = ChatChain([Candidate(a, "m"), Candidate(b, "m")])
@@ -449,19 +487,23 @@ async def test_chain_raises_the_last_error_when_everything_fails() -> None:
     assert exc_info.value.model == "b:m2"
 
 
+def _llm_settings(**overrides) -> LLMSettings:
+    """Settings independent of the developer's .env (which may hold real provider keys)."""
+    blank = {"gemini_api_key": "", "openai_compat_base_url": "", "openai_compat_api_key": ""}
+    return LLMSettings(_env_file=None, **{"openai_compat_model": "", **blank, **overrides})
+
+
 def test_chain_registry() -> None:
-    fake = get_chat_chain(LLMSettings(chat_provider="fake"))
+    fake = get_chat_chain(_llm_settings(chat_provider="fake"))
     assert fake.offline and fake.primary == "fake:fake-chat"
-    assert get_chat_chain(
-        LLMSettings(chat_provider="auto", gemini_api_key="")
-    ).offline  # no keys configured
-    gemini = get_chat_chain(LLMSettings(chat_provider="auto", gemini_api_key="k"))
+    assert get_chat_chain(_llm_settings(chat_provider="auto")).offline  # no keys configured
+    gemini = get_chat_chain(_llm_settings(chat_provider="auto", gemini_api_key="k"))
     assert [c.label for c in gemini.candidates] == [
         "gemini:gemini-3.8-flash",
         "gemini:gemini-3.6-flash",
     ]
     mixed = get_chat_chain(
-        LLMSettings(
+        _llm_settings(
             chat_provider="auto",
             gemini_api_key="k",
             openai_compat_base_url="https://llm.example/v1",
@@ -469,10 +511,14 @@ def test_chain_registry() -> None:
             openai_compat_model="small",
         )
     )
-    assert [c.label for c in mixed.candidates][-1] == "openai_compat:small"  # cross-provider
+    assert [c.label for c in mixed.candidates] == [
+        "openai_compat:small",  # the OpenAI-compatible model is primary, Gemini the fallback
+        "gemini:gemini-3.8-flash",
+        "gemini:gemini-3.6-flash",
+    ]
     assert not mixed.offline
     only_openai = get_chat_chain(
-        LLMSettings(
+        _llm_settings(
             chat_provider="auto",
             gemini_api_key="",
             chat_models="gemini:gemini-3.8-flash,openai_compat:small",

@@ -3,7 +3,8 @@
 Each candidate gets a short window (CHAT_FAILOVER_SECONDS, default 3 s) to produce its first
 event (a token or a tool call). If it is overloaded, rate-limited, unreachable or simply slow,
 the next candidate is tried at once instead of waiting out retries. A candidate that failed is
-skipped for a cool-down period so the next turns do not pay the same delay. Once a candidate
+skipped for a cool-down period so the next turns do not pay the same delay; when the provider
+says how long to wait (Retry-After), the cool-down is no longer than that. Once a candidate
 has produced an event it is committed to: later failures are errors, never silent switches.
 """
 
@@ -88,13 +89,19 @@ class ChatChain:
                     yield event
                 return
             await events.aclose()
-            self._cooling[candidate.label] = self._clock() + self.cooldown_seconds
+            self._cooling[candidate.label] = self._clock() + self._cooldown(last_error)
             if not is_last:
                 logger.warning(
                     "%s failed over to %s: %s", candidate.label, order[index + 1].label, last_error
                 )
         assert last_error is not None
         raise last_error
+
+    def _cooldown(self, error: ChatError) -> float:
+        retry_after = getattr(error, "retry_after", None)
+        if retry_after is not None and retry_after >= 0:
+            return min(self.cooldown_seconds, retry_after)
+        return self.cooldown_seconds
 
     async def aclose(self) -> None:
         for provider in {id(c.provider): c.provider for c in self.candidates}.values():

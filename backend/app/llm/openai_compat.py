@@ -111,7 +111,10 @@ class OpenAICompatChatProvider(ChatProvider):
                         f"OpenAI-compatible request failed ({response.status_code}): "
                         f"{_error_message(await response.aread())}"
                     )
-                    raise _for_status(response.status_code)(error, model=label)
+                    if _for_status(response.status_code) is ChatUnavailable:
+                        retry_after = _retry_after(response.headers.get("retry-after"))
+                        raise ChatUnavailable(error, model=label, retry_after=retry_after)
+                    raise ChatError(error, model=label)
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -178,6 +181,14 @@ def _empty_call() -> dict[str, str]:
 def _for_status(status: int) -> type[ChatError]:
     """Overload, rate limits and server errors mean "try another model"."""
     return ChatUnavailable if status in RETRYABLE_STATUS else ChatError
+
+
+def _retry_after(value: str | None) -> float | None:
+    """Retry-After in seconds (the HTTP-date form is rare for APIs and ignored)."""
+    try:
+        return max(0.0, float(value)) if value else None
+    except ValueError:
+        return None
 
 
 def _error_message(body: bytes) -> str:

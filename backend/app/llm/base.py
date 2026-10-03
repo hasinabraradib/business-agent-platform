@@ -78,7 +78,16 @@ class ChatError(Exception):
 
 
 class ChatUnavailable(ChatError):
-    """Overloaded, rate-limited or unreachable before anything was streamed: try another model."""
+    """Overloaded, rate-limited or unreachable before anything was streamed: try another model.
+
+    retry_after: seconds the provider asked us to wait (e.g. a Retry-After header), if known.
+    """
+
+    def __init__(
+        self, message: str, *, model: str | None = None, retry_after: float | None = None
+    ) -> None:
+        super().__init__(message, model=model)
+        self.retry_after = retry_after
 
 
 class ChatProvider(ABC):

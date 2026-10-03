@@ -5,7 +5,9 @@ Google's default general-purpose model; gemini-3.6-flash is the fallback. Each r
 lowest thinking level the model supports (3.8-flash: low; 3.6-flash: minimal).
 
 Gemini 3 attaches thought signatures to response parts (e.g. functionCall parts); the model's
-parts are replayed exactly as received in the follow-up request.
+parts are replayed exactly as received in the follow-up request. Function calls made by another
+model (a failover in the middle of a tool loop) have no signature, and Gemini 3 rejects them
+with a 400; they carry the placeholder Google documents for that case instead.
 """
 
 import json
@@ -36,6 +38,9 @@ MAX_ERROR_CHARS = 2000
 # Lowest supported thinking level per model (Google's thinking guide, 2026-10).
 LOWEST_THINKING = {"gemini-3.8-flash": "LOW", "gemini-3.6-flash": "MINIMAL"}
 
+# Google's documented thoughtSignature for function calls Gemini did not make itself.
+UNSIGNED_CALL_SIGNATURE = "skip_thought_signature_validator"
+
 
 class GeminiChatProvider(ChatProvider):
     name = "gemini"
@@ -64,7 +69,10 @@ class GeminiChatProvider(ChatProvider):
                 parts = message.provider_state.get(key)
                 if parts is None:  # written by another model/provider: rebuild generically
                     parts = ([{"text": message.text}] if message.text else []) + [
-                        {"functionCall": {"name": call.name, "args": call.arguments}}
+                        {
+                            "functionCall": {"name": call.name, "args": call.arguments},
+                            "thoughtSignature": UNSIGNED_CALL_SIGNATURE,
+                        }
                         for call in message.tool_calls
                     ]
                 contents.append({"role": "model", "parts": parts})

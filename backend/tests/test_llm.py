@@ -178,10 +178,17 @@ def test_gemini_rebuilds_messages_from_other_providers() -> None:
     body = GeminiChatProvider("k").build_body(
         ChatRequest(system="s", messages=[message]), "gemini-3.6-flash"
     )
+    # Without a thoughtSignature Gemini 3 answers 400 "Function call is missing a
+    # thought_signature" (seen when Groq hit its daily limit mid tool loop and Gemini took over).
     assert body["contents"] == [
         {
             "role": "model",
-            "parts": [{"functionCall": {"name": "search_knowledge", "args": {"query": "q"}}}],
+            "parts": [
+                {
+                    "functionCall": {"name": "search_knowledge", "args": {"query": "q"}},
+                    "thoughtSignature": "skip_thought_signature_validator",
+                }
+            ],
         }
     ]
 

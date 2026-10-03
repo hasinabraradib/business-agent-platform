@@ -6,6 +6,7 @@ from pathlib import PurePath
 from sqlalchemy.exc import IntegrityError
 
 from app.config import get_settings
+from app.ingestion.catalog import CatalogMappingError, validate_mapping
 from app.ingestion.storage import FileStorage
 from app.models import Document
 from app.tenancy import TenantDB
@@ -49,7 +50,12 @@ def validate_upload(filename: str, data: bytes) -> str:
 
 
 async def create_upload_document(
-    db: TenantDB, storage: FileStorage, filename: str, data: bytes, title: str | None = None
+    db: TenantDB,
+    storage: FileStorage,
+    filename: str,
+    data: bytes,
+    title: str | None = None,
+    catalog_mapping: dict[str, str] | None = None,
 ) -> tuple[Document, bool]:
     """Create (and commit) a pending document for an upload, or return the existing one.
 
@@ -57,6 +63,13 @@ async def create_upload_document(
     """
     filename = PurePath(filename).name
     source_type = validate_upload(filename, data)
+    if catalog_mapping is not None:
+        if source_type != "csv":
+            raise UploadRejected(422, "Only CSV files can be catalogues")
+        try:
+            catalog_mapping = validate_mapping(catalog_mapping)
+        except CatalogMappingError as exc:
+            raise UploadRejected(422, str(exc)) from exc
     content_hash = hashlib.sha256(data).hexdigest()
     duplicate = (Document.content_hash == content_hash, Document.source_type != "url")
     if existing := await db.scalar(db.select(Document).where(*duplicate)):
@@ -67,6 +80,7 @@ async def create_upload_document(
         source_type=source_type,
         source_uri=filename,
         content_hash=content_hash,
+        catalog_mapping=catalog_mapping,
     )
     db.add(document)
     try:

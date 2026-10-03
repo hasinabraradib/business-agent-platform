@@ -33,6 +33,9 @@ class Scripted:
 
 
 Responder = Callable[[ChatRequest, str], "str | Scripted"]
+LIST_QUESTION = re.compile(
+    r"\b(which|list|under|below|cheapest|how many|niche|koyta|kon kon)\b", re.IGNORECASE
+)
 GREETING = re.compile(
     r"^\s*(hi|hello|hey|thanks?|thank you|assalamu? ?alaikum|হ্যালো|ধন্যবাদ)\b", re.IGNORECASE
 )
@@ -55,6 +58,12 @@ def offline_responder(request: ChatRequest, model: str) -> str | Scripted:
     first passage found (with its citation) or say nothing was found."""
     last = request.messages[-1]
     if last.role == "tool":
+        if "<catalog-results-" in last.text:
+            rows = re.findall(r"^\[(\d+)\] ([^|(\n]+)", last.text, re.M)
+            if rows:
+                listed = ", ".join(f"{name.strip()} [{marker}]" for marker, name in rows[:5])
+                return f"[[answered]]\nHere's what we have: {listed}"
+            return "[[no_answer]]\nSorry, nothing on our list matches that."
         passage = re.search(r"^\[(\d+)\] [^\n]*\n([^\n]+)", last.text, re.M)
         if passage:
             return f"[[answered]]\nFrom what we have: {passage.group(2)} [{passage.group(1)}]"
@@ -62,7 +71,15 @@ def offline_responder(request: ChatRequest, model: str) -> str | Scripted:
     text = last_user_text(request)
     if GREETING.match(text):
         return "[[smalltalk]]\nHello! How can I help you today?"
-    if any(tool.name == "search_knowledge" for tool in request.tools):
+    offered = {tool.name for tool in request.tools}
+    if "query_catalog" in offered and LIST_QUESTION.search(text):
+        arguments: dict[str, Any] = {"limit": 10}
+        if price := re.search(r"(\d[\d,]*)", text):
+            arguments["max_price"] = float(price.group(1).replace(",", ""))
+        if "nut" in text.lower():
+            arguments["attributes"] = [{"name": "allergens", "contains": "nuts"}]
+        return Scripted(tool_calls=[("query_catalog", arguments)])
+    if "search_knowledge" in offered:
         return Scripted(tool_calls=[("search_knowledge", {"query": text})])
     return "[[no_answer]]\nSorry, I couldn't find that in our information."
 

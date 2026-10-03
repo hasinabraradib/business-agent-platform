@@ -11,17 +11,18 @@ import logging
 import math
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import get_settings
 from app.embeddings import EmbeddingError, EmbeddingInput, EmbeddingProvider
+from app.ingestion.catalog import CatalogMappingError, catalog_rows
 from app.ingestion.chunking import chunk_document
 from app.ingestion.fetch import FetchedPage, FetchError, UnsafeURLError, fetch_url, parse_fetched
-from app.ingestion.parsers import ParsedDocument, ParseError, parse
+from app.ingestion.parsers import ParsedDocument, ParseError, decode_text, parse
 from app.ingestion.storage import FileStorage
-from app.models import Chunk, Document
+from app.models import CatalogItem, Chunk, Document
 from app.tenancy import tenant_db
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ class _Prepared:
     rows: list[Chunk]
     title: str | None = None  # a better title found in the source (web pages)
     content_hash: str | None = None  # for URLs: hash of the fetched body
+    catalog: list[CatalogItem] = field(default_factory=list)  # catalogue CSVs only
 
 
 async def process_document(deps: IngestDeps, tenant_id: uuid.UUID, document_id: uuid.UUID) -> str:
@@ -65,11 +67,18 @@ async def process_document(deps: IngestDeps, tenant_id: uuid.UUID, document_id: 
         document.status = "processing"
         document.error = None
         snapshot = (document.source_type, document.source_uri, document.title)
+        catalog_mapping = document.catalog_mapping
+        tenant = await db.tenant()
+        currency = str((tenant.settings or {}).get("currency") or "BDT")
         await db.commit()
 
     source_type, source_uri, title = snapshot
     try:
         prepared = await _prepare(deps, tenant_id, document_id, source_type, source_uri, title)
+        if catalog_mapping is not None and source_type == "csv":
+            prepared.catalog = await _catalog_items(
+                deps, tenant_id, document_id, catalog_mapping, currency, prepared.rows
+            )
     except EXPECTED_ERRORS as exc:
         return await _mark_failed(deps, tenant_id, document_id, str(exc))
     except FileNotFoundError:
@@ -83,8 +92,11 @@ async def process_document(deps: IngestDeps, tenant_id: uuid.UUID, document_id: 
             document = await db.get(Document, document_id, for_update=True)
             if document is None:
                 return "missing"  # deleted while we were working
+            await db.delete_where(CatalogItem, CatalogItem.document_id == document_id)
             await db.delete_where(Chunk, Chunk.document_id == document_id)
             db.add_all(prepared.rows)
+            await db.flush()  # chunks before the catalogue rows that reference them
+            db.add_all(prepared.catalog)
             document.status = "ready"
             document.error = None
             document.chunk_count = len(prepared.rows)
@@ -134,6 +146,7 @@ async def _prepare(
 
     rows = [
         Chunk(
+            id=uuid.uuid4(),  # known before insert, so catalogue rows can point at it
             tenant_id=tenant_id,
             document_id=document_id,
             chunk_index=draft.index,
@@ -145,6 +158,31 @@ async def _prepare(
         for draft, vector in zip(drafts, vectors, strict=True)
     ]
     return _Prepared(rows=rows, title=parsed.title, content_hash=content_hash)
+
+
+async def _catalog_items(
+    deps: IngestDeps,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    mapping: dict,
+    currency: str,
+    chunks: list[Chunk],
+) -> list[CatalogItem]:
+    data = await deps.storage.read(tenant_id, document_id, "csv")
+    try:
+        rows = catalog_rows(decode_text(data), mapping, currency)
+    except CatalogMappingError as exc:
+        raise ParseError(f"catalogue mapping: {exc}") from exc
+    chunk_by_row = {chunk.meta.get("row"): chunk.id for chunk in chunks}
+    return [
+        CatalogItem(
+            tenant_id=tenant_id,
+            document_id=document_id,
+            chunk_id=chunk_by_row.get(row["row"]),
+            **row,
+        )
+        for row in rows
+    ]
 
 
 async def _mark_failed(

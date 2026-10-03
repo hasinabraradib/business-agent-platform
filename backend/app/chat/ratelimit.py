@@ -36,6 +36,13 @@ class RateLimiter:
             return max(1, 60 - int(time.time() % 60))
         return None
 
+    async def window(self, name: str, limit: int, seconds: int) -> int | None:
+        """None if allowed, else seconds until the window resets (fixed window of `seconds`)."""
+        bucket = int(time.time() // seconds)
+        if await self._hit(f"bap:rl:{name}:{bucket}", limit, seconds) > limit:
+            return max(1, seconds - int(time.time() % seconds))
+        return None
+
     async def daily(self, name: str, limit: int) -> int | None:
         now = datetime.now(UTC)
         key = f"bap:cap:{name}:{now:%Y-%m-%d}"

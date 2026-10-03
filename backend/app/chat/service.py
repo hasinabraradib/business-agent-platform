@@ -34,7 +34,7 @@ from app.chat.prompts import (
     uses_bengali_script,
 )
 from app.chat.settings import TenantChatSettings
-from app.chat.tools import Source, ToolRegistry, TurnContext, _location
+from app.chat.tools import Source, ToolRegistry, TurnContext, location
 from app.llm import (
     ChatChain,
     ChatError,
@@ -45,7 +45,7 @@ from app.llm import (
     ToolCallEvent,
     Usage,
 )
-from app.models import Chunk, Conversation, Document
+from app.models import Chunk, Conversation, Document, ToolCallRecord
 from app.models import Message as StoredMessage
 from app.tenancy import tenant_db
 
@@ -59,6 +59,7 @@ _background: set[asyncio.Task] = set()
 @dataclass
 class ChatConfig:
     max_searches: int = 2
+    max_tool_steps: int = 4  # model calls with tools per turn; one more call must answer
     history_messages: int = 6
     first_token_timeout_seconds: float = 25.0  # whole chain, per model call
     idle_timeout_seconds: float = 20.0
@@ -76,6 +77,7 @@ class ChatTurnInput:
     history: list[HistoryTurn]
     settings: TenantChatSettings
     earlier_chunk_ids: list[uuid.UUID] = field(default_factory=list)
+    visitor_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -138,12 +140,17 @@ class ChatService:
         tools: ToolRegistry,
         config: ChatConfig | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        limiter: Any = None,  # per-visitor tool limits (RateLimiter); None disables them
+        queue: Any = None,  # webhook delivery jobs (JobQueue); None: deliveries stay queued
     ) -> None:
         self.sessionmaker = sessionmaker
         self.chain = chain
         self.tools = tools
         self.config = config or ChatConfig()
         self.clock = clock
+        self.limiter = limiter
+        self.queue = queue
+        self.tools.max_searches = self.config.max_searches
 
     async def respond(self, turn: ChatTurnInput) -> AsyncIterator[ChatEvent]:
         run = _Run()
@@ -161,7 +168,20 @@ class ChatService:
             raise
 
     async def _respond(self, turn: ChatTurnInput, run: _Run) -> AsyncIterator[ChatEvent]:
-        context = TurnContext(turn.tenant_id, turn.settings, new_nonce())
+        now = self.clock()
+        context = TurnContext(
+            turn.tenant_id,
+            turn.settings,
+            new_nonce(),
+            conversation_id=turn.conversation_id,
+            user_message_id=turn.user_message_id,
+            visitor_id=turn.visitor_id,
+            message=turn.message,
+            now=now,
+            sessionmaker=self.sessionmaker,
+            limiter=self.limiter,
+            queue=self.queue,
+        )
         run.context = context
         earlier = await self._earlier_sources(turn, context)
         messages: list[Message] = []
@@ -172,7 +192,9 @@ class ChatService:
                 messages.append(Message("assistant", past.content))
         current = customer_block(turn.message, context.nonce, earlier)
         messages.append(Message("user", current))
-        system = system_prompt(turn.settings, self.clock(), context.nonce)
+        system = system_prompt(
+            turn.settings, now, context.nonce, self.tools.guidance(turn.settings)
+        )
 
         tags = OutcomeTagFilter()
         citations = CitationFilter(context.valid_markers)  # grows as searches find sources
@@ -180,12 +202,18 @@ class ChatService:
         error: str | None = None
         try:
             async with asyncio.timeout(self.config.total_timeout_seconds):
-                for step in range(self.config.max_searches + 1):
-                    searches_left = self.config.max_searches - len(context.searches)
+                for step in range(self.config.max_tool_steps + 1):
+                    context.step = step + 1
+                    exclude = (
+                        frozenset({"search_knowledge"})
+                        if len(context.searches) >= self.config.max_searches
+                        else frozenset()
+                    )
+                    last = step == self.config.max_tool_steps
                     request = ChatRequest(
                         system=system,
                         messages=messages,
-                        tools=self.tools.specs(turn.settings) if searches_left > 0 else [],
+                        tools=[] if last else self.tools.specs(turn.settings, exclude=exclude),
                         temperature=self.config.temperature,
                         max_output_tokens=self.config.max_output_tokens,
                     )
@@ -212,7 +240,7 @@ class ChatService:
                         break
                     messages.append(finish.assistant)
                     for call in calls:
-                        messages.append(await self._run_tool(context, call))
+                        messages.append(await self.tools.execute(context, call))
         except TimeoutError:
             error = "model timed out"
         except ChatError as exc:
@@ -233,7 +261,13 @@ class ChatService:
                 run.timings["first_token"] = run.ms_since(run.started)
             run.reply.append(tail)
             yield TokenEvent(tail)
-        outcome = decide_outcome(tags.tag, citations.used, bool(context.searches))
+        outcome = decide_outcome(
+            tags.tag,
+            citations.used,
+            bool(context.searches),
+            action=bool(context.actions),
+            lookup=context.lookups > 0,
+        )
         contact = turn.settings.fallback_contact
         if outcome == "no_answer" and contact and contact not in "".join(run.reply):
             extra = contact_line(turn.settings, turn.message)
@@ -281,16 +315,6 @@ class ChatService:
         finally:
             await events.aclose()
 
-    async def _run_tool(self, context: TurnContext, call) -> Message:
-        tool = self.tools.get(call.name)
-        if tool is None:
-            content = f"There is no tool named {call.name!r}."
-        elif call.name == "search_knowledge" and len(context.searches) >= self.config.max_searches:
-            content = "Search limit reached for this message. Answer with what you already have."
-        else:
-            content = (await tool.run(context, call.arguments)).content
-        return Message(role="tool", text=content, tool_call_id=call.id, tool_name=call.name)
-
     async def _earlier_sources(
         self, turn: ChatTurnInput, context: TurnContext
     ) -> list[ContextChunk]:
@@ -314,7 +338,7 @@ class ChatService:
             )
             marker = context.add_source(source)
             found.append(
-                ContextChunk(marker, source.document_title, _location(chunk.meta), chunk.content)
+                ContextChunk(marker, source.document_title, location(chunk.meta), chunk.content)
             )
         return found
 
@@ -336,6 +360,14 @@ class ChatService:
                 for s in context.searches
             ],
             "earlier_sources": [str(context.sources[c.marker].chunk_id) for c in earlier],
+            "tools": [
+                {"step": r.step, "tool": r.tool, "status": r.status, "summary": r.result_summary}
+                for r in context.records
+            ],
+            "actions": [
+                {"tool": a.tool, "result_id": str(a.result_id), "summary": a.summary}
+                for a in context.actions
+            ],
             "checks": checks,
         }
 
@@ -381,6 +413,20 @@ class ChatService:
                 error=error[:MAX_STORED_ERROR_CHARS] if error else None,
             )
             db.add(message)
+            await db.flush()
+            for record in run.context.records if run.context else []:
+                db.add(
+                    ToolCallRecord(
+                        conversation_id=turn.conversation_id,
+                        message_id=message.id,
+                        step=record.step,
+                        tool=record.tool,
+                        arguments=record.arguments,
+                        status=record.status,
+                        result_summary=record.result_summary,
+                        duration_ms=record.duration_ms,
+                    )
+                )
             conversation = await db.get(Conversation, turn.conversation_id)
             if conversation is not None:
                 conversation.updated_at = func.now()  # newest-first conversation lists

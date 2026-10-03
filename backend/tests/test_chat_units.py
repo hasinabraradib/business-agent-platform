@@ -116,7 +116,7 @@ def test_system_prompt_has_time_voice_and_grounding_rules() -> None:
         "call 01700",
         "At most two searches",
         "search the opening hours, compare them with the current local time",
-        "cannot make bookings",
+        "Never claim something was booked",
         "<customer-message-abcd1234>",
         "Mention the Friday lunch special",
         "[[smalltalk]]",

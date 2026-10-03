@@ -1,12 +1,17 @@
 """Per-tenant chat settings, stored in tenants.settings (JSON) and edited by the business."""
 
 import logging
+import re
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 logger = logging.getLogger(__name__)
+
+OpeningHours = dict[str, list[tuple[str, str]]]
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
 class TenantChatSettings(BaseModel):
@@ -30,6 +35,30 @@ class TenantChatSettings(BaseModel):
     timezone: str = Field(default="UTC", max_length=64)
     # Extra instructions from the business (appended to the system prompt as guidance).
     instructions: str = Field(default="", max_length=1000)
+
+    # Tools the assistant may use for this tenant (the model is only offered these).
+    enabled_tools: list[str] = Field(default_factory=lambda: ["search_knowledge"])
+    currency: str = Field(default="BDT", pattern=r"^[A-Z]{3}$")
+    # Weekly opening hours for reservations: {"mon": [["12:00", "23:00"]], ...}; a closing time
+    # at or before the opening time means after midnight. Missing day: closed.
+    opening_hours: OpeningHours = Field(default_factory=dict)
+    max_online_party_size: int = Field(default=8, ge=1, le=100)
+    # What the assistant may say about follow-up timing for leads; empty: promise no time.
+    follow_up_promise: str = Field(default="", max_length=200)
+
+    @field_validator("opening_hours")
+    @classmethod
+    def _valid_hours(
+        cls, hours: dict[str, list[tuple[str, str]]]
+    ) -> dict[str, list[tuple[str, str]]]:
+        for day, ranges in hours.items():
+            if day not in WEEKDAYS:
+                raise ValueError(f"unknown weekday {day!r}; use {', '.join(WEEKDAYS)}")
+            for opens, closes in ranges:
+                for value in (opens, closes):
+                    if not HHMM.fullmatch(value):
+                        raise ValueError(f"times must be HH:MM, got {value!r}")
+        return hours
 
     @field_validator("timezone")
     @classmethod

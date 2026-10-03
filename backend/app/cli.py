@@ -15,6 +15,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import func, select, update
@@ -26,7 +27,7 @@ from app.embeddings import get_embedding_provider
 from app.ingestion.documents import UPLOAD_TYPES, UploadRejected, create_upload_document
 from app.ingestion.pipeline import IngestDeps, process_document
 from app.ingestion.storage import get_storage
-from app.models import ApiKey, Document, Tenant
+from app.models import ApiKey, Document, Order, Tenant
 from app.security import new_api_key
 from app.tenancy import tenant_db
 from app.tenants import TenantExistsError, create_tenant
@@ -55,6 +56,17 @@ DEMO_TENANTS = [
             ),
             "accent_color": "#B5432F",
             "timezone": "Asia/Dhaka",
+            "enabled_tools": [
+                "search_knowledge",
+                "query_catalog",
+                "create_reservation",
+                "capture_lead",
+            ],
+            "opening_hours": {
+                **{day: [["12:00", "23:00"]] for day in ("sat", "sun", "mon", "tue", "wed", "thu")},
+                "fri": [["14:30", "23:00"]],
+            },
+            "max_online_party_size": 8,
             "suggested_questions": [
                 "What's on the menu?",
                 "Do you take reservations?",
@@ -62,6 +74,7 @@ DEMO_TENANTS = [
                 "Is there parking?",
             ],
         },
+        "catalogs": {"menu.csv"},
         "titles": {
             "menu.csv": "Nodi Kitchen menu",
             "about.md": "Nodi Kitchen: hours, location, reservations and FAQ",
@@ -88,12 +101,15 @@ DEMO_TENANTS = [
             "greeting": "Hi! I'm Mithila. Ask me about our sarees, delivery or returns.",
             "accent_color": "#F2C14E",
             "timezone": "Asia/Dhaka",
+            "enabled_tools": ["search_knowledge", "query_catalog", "lookup_order", "capture_lead"],
+            "follow_up_promise": "within one working day",
             "suggested_questions": [
                 "How long does delivery take?",
                 "What is your return policy?",
                 "Do you sell jute bags?",
             ],
         },
+        "catalogs": {"products.csv"},
         "titles": {
             "products.csv": "Jamdani Lane product catalogue",
             "shipping.md": "Shipping",
@@ -192,6 +208,81 @@ def _read_demo_files(demo_dir: Path) -> dict[str, list[tuple[str, bytes]]]:
     }
 
 
+DEMO_ORDERS = [
+    {
+        "order_number": "JL-10231",
+        "status": "delivered",
+        "items": [{"name": "Jute Tote Bag", "qty": 2, "price": 850}],
+        "total": 1770,
+        "phone": "01711-234567",
+        "placed": 9,
+        "shipped": 8,
+        "delivered": 6,
+        "courier": "Pathao",
+    },
+    {
+        "order_number": "JL-10232",
+        "status": "shipped",
+        "items": [{"name": "Half-silk Jamdani Saree", "qty": 1, "price": 12500}],
+        "total": 12500,
+        "phone": "01819-876543",
+        "placed": 3,
+        "shipped": 1,
+        "delivered": None,
+        "courier": "Steadfast",
+    },
+    {
+        "order_number": "JL-10233",
+        "status": "processing",
+        "items": [
+            {"name": "Nakshi Kantha Cushion Cover (pair)", "qty": 1, "price": 1600},
+            {"name": "Terracotta Tea Set", "qty": 1, "price": 2800},
+        ],
+        "total": 4400,
+        "phone": "01912-555012",
+        "placed": 0,
+        "shipped": None,
+        "delivered": None,
+        "courier": None,
+    },
+]
+
+
+async def _seed_demo_orders(tenant_id: uuid.UUID) -> None:
+    """A few demo orders for the shop (orders come from the shop's own systems in real use)."""
+    now = datetime.now(UTC)
+    async with owner_session() as session:
+        for demo in DEMO_ORDERS:
+            exists = await session.scalar(
+                select(Order.id).where(
+                    Order.tenant_id == tenant_id, Order.order_number == demo["order_number"]
+                )
+            )
+            if exists:
+                continue
+            days = {k: demo[k] for k in ("placed", "shipped", "delivered")}
+            session.add(
+                Order(
+                    tenant_id=tenant_id,
+                    order_number=demo["order_number"],
+                    status=demo["status"],
+                    items=demo["items"],
+                    total=demo["total"],
+                    currency="BDT",
+                    phone=demo["phone"],
+                    placed_at=now - timedelta(days=days["placed"]),
+                    shipped_at=now - timedelta(days=days["shipped"])
+                    if days["shipped"] is not None
+                    else None,
+                    delivered_at=now - timedelta(days=days["delivered"])
+                    if days["delivered"] is not None
+                    else None,
+                    courier=demo["courier"],
+                )
+            )
+        await session.commit()
+
+
 async def cmd_seed_demo(args: argparse.Namespace) -> int:
     try:
         demo_files = await asyncio.to_thread(_read_demo_files, Path(args.demo_dir))
@@ -200,6 +291,7 @@ async def cmd_seed_demo(args: argparse.Namespace) -> int:
         return 1
 
     tenant_ids = await _ensure_demo_tenants()
+    await _seed_demo_orders(tenant_ids["demo-shop"])
     print("Keys are shown only when a tenant is first created. Store them now.")
 
     embedder = get_embedding_provider()
@@ -220,9 +312,14 @@ async def cmd_seed_demo(args: argparse.Namespace) -> int:
             for name, data in demo_files[demo["slug"]]:
                 async with tenant_db(deps.sessionmaker, tenant_id) as db:
                     try:
+                        mapping = {} if name in demo["catalogs"] else None
                         document, created = await create_upload_document(
-                            db, deps.storage, name, data, demo["titles"].get(name)
+                            db, deps.storage, name, data, demo["titles"].get(name), mapping
                         )
+                        if not created and mapping is not None and document.catalog_mapping is None:
+                            document.catalog_mapping = mapping  # became a catalogue: re-ingest
+                            document.status = "pending"
+                            await db.commit()
                     except UploadRejected as exc:
                         print(f"  {name}: rejected ({exc.message})")
                         failures += 1

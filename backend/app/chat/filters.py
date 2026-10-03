@@ -108,16 +108,27 @@ class CitationFilter:
         return text
 
 
-def decide_outcome(tag: str | None, cited: list[int], searched: bool) -> str:
+def decide_outcome(
+    tag: str | None,
+    cited: list[int],
+    searched: bool,
+    *,
+    action: bool = False,
+    lookup: bool = False,
+) -> str:
     """The stored outcome, decided from what code can verify:
 
-    - answered: the reply cites at least one source actually found in this conversation;
+    - action: a write tool completed this turn (a reservation booked, a lead saved);
+    - answered: the reply cites a source found in this conversation, or a record lookup (an
+      order) succeeded this turn;
     - no_answer: a search was made but the reply cites nothing (nothing relevant was found, or
       the reply is not grounded), or the model reports it could not answer, or it claims an
       answer with nothing to verify it;
     - smalltalk: no search and no claim (the model's [[smalltalk]] tag, or no tag at all).
     """
-    if cited:
+    if action:
+        return "action"
+    if cited or lookup:
         return "answered"
     if searched:
         return "no_answer"

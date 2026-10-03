@@ -177,9 +177,15 @@ class RecordingQueue:
 
     def __init__(self) -> None:
         self.jobs: list[tuple[uuid.UUID, uuid.UUID]] = []
+        self.webhooks: list[tuple[uuid.UUID, uuid.UUID, int]] = []
 
     async def enqueue_ingest(self, tenant_id: uuid.UUID, document_id: uuid.UUID) -> None:
         self.jobs.append((tenant_id, document_id))
+
+    async def enqueue_webhook(
+        self, tenant_id: uuid.UUID, delivery_id: uuid.UUID, defer_seconds: int = 0
+    ) -> None:
+        self.webhooks.append((tenant_id, delivery_id, defer_seconds))
 
 
 @pytest.fixture(autouse=True)

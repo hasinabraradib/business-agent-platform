@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from typing import Annotated
@@ -71,12 +72,24 @@ async def upload_document(
     response: Response,
     file: Annotated[UploadFile, File(description=SUPPORTED)],
     title: Annotated[str | None, Form(max_length=300)] = None,
+    catalog: Annotated[bool, Form(description="CSV menu/product list: also store rows")] = False,
+    catalog_mapping: Annotated[
+        str | None, Form(description='JSON column mapping, e.g. {"name": "dish_en"}')
+    ] = None,
 ):
     max_bytes = get_settings().max_upload_bytes
     data = await file.read(max_bytes + 1)  # one byte over is enough to reject
+    mapping = None
+    if catalog or catalog_mapping:
+        try:
+            mapping = json.loads(catalog_mapping) if catalog_mapping else {}
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail="catalog_mapping is not valid JSON"
+            ) from None
     try:
         document, created = await create_upload_document(
-            auth.db, storage, file.filename or "", data, title
+            auth.db, storage, file.filename or "", data, title, mapping
         )
     except UploadRejected as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

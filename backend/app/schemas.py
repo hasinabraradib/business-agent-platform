@@ -43,6 +43,7 @@ class DocumentOut(ORMModel):
     title: str
     source_type: str
     source_uri: str | None
+    catalog_mapping: dict[str, Any] | None = None
     status: str
     chunk_count: int
     error: str | None

@@ -1,0 +1,121 @@
+{
+  "name": "Business Agent Platform: reservations and leads",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "business-agent-events",
+        "responseMode": "onReceived",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Business Agent webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "00000000-0000-0000-0000-000000000065"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify the Business Agent Platform signature, then emit one flat row per event.\n// Requires the environment variables BAP_WEBHOOK_SECRET (the secret from the admin API) and\n// NODE_FUNCTION_ALLOW_BUILTIN=crypto (so this Code node may use Node's crypto module).\nconst crypto = require('crypto');\nconst secret = $env.BAP_WEBHOOK_SECRET;\nif (!secret) throw new Error('BAP_WEBHOOK_SECRET is not set');\n\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst timestamp = Number(headers['x-bap-timestamp']);\nconst signature = String(headers['x-bap-signature'] || '');\nconst raw = Buffer.from(item.binary.data.data, 'base64').toString('utf8');\n\n// Reject replays: the signed timestamp must be within five minutes.\nif (!Number.isFinite(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) {\n  throw new Error('Stale or missing X-BAP-Timestamp');\n}\nconst expected = 'v1=' + crypto.createHmac('sha256', secret).update(`${timestamp}.${raw}`).digest('hex');\nconst valid = expected.length === signature.length &&\n  crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));\nif (!valid) throw new Error('Invalid X-BAP-Signature');\n\nconst event = JSON.parse(raw);\nconst data = event.data || {};\nreturn [{\n  json: {\n    received_at: new Date().toISOString(),\n    event_id: event.id,\n    event_type: event.type,\n    created_at: event.created_at,\n    name: data.name || '',\n    phone_or_contact: data.phone || data.contact || '',\n    when: data.starts_at || '',\n    party_size: data.party_size || '',\n    reference: data.reference || '',\n    interest: data.interest || '',\n    notes: data.notes || '',\n  },\n}];"
+      },
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "url",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Events"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000003",
+      "name": "Append to Google Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        480,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "assistant@example.com",
+        "toEmail": "owner@example.com",
+        "subject": "=New {{ $json.event_type }}: {{ $json.name }}",
+        "emailFormat": "text",
+        "text": "={{ $json.event_type }} from the website assistant\n\nName: {{ $json.name }}\nContact: {{ $json.phone_or_contact }}\nWhen: {{ $json.when }}\nParty size: {{ $json.party_size }}\nReference: {{ $json.reference }}\nInterest: {{ $json.interest }}\nNotes: {{ $json.notes }}",
+        "options": {}
+      },
+      "id": "00000000-0000-0000-0000-000000000004",
+      "name": "Email alert",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        480,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Business Agent webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Append to Google Sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

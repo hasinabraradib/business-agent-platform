@@ -7,6 +7,7 @@ from app.chat.deps import get_chat_service, get_rate_limiter
 from app.ingestion.queue import get_job_queue
 from app.retrieval import get_retriever
 from app.routers import (
+    actions,
     api_keys,
     chat,
     conversations,
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     v1.include_router(chat.router)
     v1.include_router(conversations.router)
     v1.include_router(widget.config_router)
+    v1.include_router(actions.router)
     app.include_router(v1)
 
     @app.middleware("http")

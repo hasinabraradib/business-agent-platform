@@ -10,10 +10,15 @@ from arq.connections import RedisSettings
 from app.config import get_settings
 
 INGEST_JOB = "ingest_document"
+WEBHOOK_JOB = "deliver_webhook"
 
 
 class JobQueue(Protocol):
     async def enqueue_ingest(self, tenant_id: uuid.UUID, document_id: uuid.UUID) -> None: ...
+
+    async def enqueue_webhook(
+        self, tenant_id: uuid.UUID, delivery_id: uuid.UUID, defer_seconds: int = 0
+    ) -> None: ...
 
 
 class ArqJobQueue:
@@ -29,6 +34,19 @@ class ArqJobQueue:
         # so overlapping jobs cannot interleave.
         await self._pool.enqueue_job(
             INGEST_JOB, str(tenant_id), str(document_id), _job_id=f"ingest:{uuid.uuid4()}"
+        )
+
+    async def enqueue_webhook(
+        self, tenant_id: uuid.UUID, delivery_id: uuid.UUID, defer_seconds: int = 0
+    ) -> None:
+        if self._pool is None:
+            self._pool = await create_pool(self._settings)
+        await self._pool.enqueue_job(
+            WEBHOOK_JOB,
+            str(tenant_id),
+            str(delivery_id),
+            _job_id=f"webhook:{delivery_id}:{uuid.uuid4().hex[:8]}",
+            _defer_by=defer_seconds or None,
         )
 
     async def aclose(self) -> None:

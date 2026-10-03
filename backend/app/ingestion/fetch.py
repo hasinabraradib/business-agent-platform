@@ -186,3 +186,52 @@ def parse_fetched(page: FetchedPage) -> ParsedDocument:
     if media_type == "text/plain":
         return parse_text(text)
     raise ParseError(f"unsupported content type: {media_type}")
+
+
+@dataclass(frozen=True)
+class PostResult:
+    status_code: int
+    body_excerpt: str
+
+
+async def post_json(
+    url: str,
+    body: bytes,
+    headers: dict[str, str],
+    *,
+    timeout_seconds: float,
+    resolver: Resolver = system_resolver,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> PostResult:
+    """POST to a URL with the same SSRF protection as fetching: http/https only, public
+    addresses only, connection pinned to the checked IP. Redirects are not followed (a
+    webhook that redirects is reported as a failure)."""
+    target = await validate_url(url, resolver)
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            async with httpx.AsyncClient(
+                transport=transport,
+                follow_redirects=False,
+                timeout=timeout_seconds,
+                trust_env=False,
+            ) as client:
+                request = client.build_request(
+                    "POST",
+                    target.url.copy_with(host=target.ip),
+                    content=body,
+                    headers={
+                        **headers,
+                        "Host": target.url.netloc.decode("ascii"),
+                        "User-Agent": USER_AGENT,
+                        "Content-Type": "application/json",
+                    },
+                    extensions={"sni_hostname": target.host}
+                    if target.url.scheme == "https"
+                    else {},
+                )
+                response = await client.send(request)
+                return PostResult(response.status_code, response.text[:300])
+    except TimeoutError:
+        raise FetchError(f"timed out after {timeout_seconds:g} seconds") from None
+    except httpx.HTTPError as exc:
+        raise FetchError(f"could not reach the URL ({type(exc).__name__})") from exc

@@ -14,8 +14,9 @@ from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
 from app.embeddings import get_embedding_provider
 from app.ingestion.pipeline import IngestDeps, process_document
-from app.ingestion.queue import INGEST_JOB
+from app.ingestion.queue import INGEST_JOB, WEBHOOK_JOB
 from app.ingestion.storage import get_storage
+from app.webhooks.delivery import deliver
 
 # arq's CLI configures its own "arq" logger; give our "app" loggers a handler of their own
 # (rather than the root logger, which would print arq's lines twice).
@@ -50,6 +51,20 @@ async def ingest_document(ctx: dict, tenant_id: str, document_id: str) -> str:
     return await process_document(ctx["deps"], uuid.UUID(tenant_id), uuid.UUID(document_id))
 
 
+async def deliver_webhook(ctx: dict, tenant_id: str, delivery_id: str) -> str:
+    """One signed delivery attempt; schedules the next attempt with backoff on failure."""
+    result = await deliver(ctx["deps"].sessionmaker, uuid.UUID(tenant_id), uuid.UUID(delivery_id))
+    if result.retry_in and ctx.get("redis") is not None:
+        await ctx["redis"].enqueue_job(
+            WEBHOOK_JOB,
+            tenant_id,
+            delivery_id,
+            _job_id=f"webhook:{delivery_id}:{uuid.uuid4().hex[:8]}",
+            _defer_by=result.retry_in,
+        )
+    return result.status
+
+
 class WorkerSettings:
     functions = (
         # The job records its own failures on the document; arq retries only if the job is
@@ -60,6 +75,7 @@ class WorkerSettings:
             max_tries=3,
             timeout=get_settings().ingest_job_timeout_seconds,
         ),
+        func(deliver_webhook, name=WEBHOOK_JOB, max_tries=1, timeout=60),
     )
     on_startup = startup
     on_shutdown = shutdown

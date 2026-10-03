@@ -107,9 +107,16 @@ class OpenAICompatChatProvider(ChatProvider):
                 "POST", self._url, json=self.build_body(request, model), headers=self._headers
             ) as response:
                 if not response.is_success:
+                    body = await response.aread()
+                    if rejected := _rejected_tool_calls(_error_object(body)):
+                        for call in rejected:  # returned to the model by the tool registry
+                            yield ToolCallEvent(call)
+                        assistant = Message(role="assistant", text="", tool_calls=rejected)
+                        yield Finish(usage=usage, model=label, assistant=assistant)
+                        return
                     error = (
                         f"OpenAI-compatible request failed ({response.status_code}): "
-                        f"{_error_message(await response.aread())}"
+                        f"{_error_message(body)}"
                     )
                     if _for_status(response.status_code) is ChatUnavailable:
                         retry_after = _retry_after(response.headers.get("retry-after"))
@@ -126,6 +133,12 @@ class OpenAICompatChatProvider(ChatProvider):
                     except ValueError as exc:
                         raise ChatError("malformed stream event", model=label) from exc
                     if error := event.get("error"):
+                        if not text and (rejected := _rejected_tool_calls(error)):
+                            for call in rejected:
+                                yield ToolCallEvent(call)
+                            assistant = Message(role="assistant", text="", tool_calls=rejected)
+                            yield Finish(usage=usage, model=label, assistant=assistant)
+                            return
                         detail = f"provider error: {str(error)[:MAX_ERROR_CHARS]}"
                         raise ChatError(detail, model=label)
                     if event.get("usage"):
@@ -172,6 +185,41 @@ class OpenAICompatChatProvider(ChatProvider):
 
     async def aclose(self) -> None:
         await self._client.aclose()
+
+
+def _rejected_tool_calls(error: object) -> list[ToolCall]:
+    """Groq validates tool arguments against the schema itself and, when they don't match,
+    sends an error (code tool_use_failed) with the model's attempt in failed_generation instead
+    of the tool call. Hand that attempt back as an ordinary tool call, so the tool registry
+    validates it and returns the errors to the model, the same as with any other provider."""
+    if not isinstance(error, dict) or error.get("code") != "tool_use_failed":
+        return []
+    try:
+        generation = json.loads(error.get("failed_generation") or "")
+    except (TypeError, ValueError):
+        return []
+    attempts = generation if isinstance(generation, list) else [generation]
+    calls = []
+    for index, attempt in enumerate(attempts):
+        if not isinstance(attempt, dict) or not isinstance(attempt.get("name"), str):
+            return []
+        arguments = attempt.get("arguments") or attempt.get("parameters") or {}
+        if isinstance(arguments, str):
+            try:
+                arguments = json.loads(arguments)
+            except ValueError:
+                return []
+        if not isinstance(arguments, dict):
+            return []
+        calls.append(ToolCall(id=f"rejected_{index}", name=attempt["name"], arguments=arguments))
+    return calls
+
+
+def _error_object(body: bytes) -> object:
+    try:
+        return json.loads(body).get("error")
+    except (ValueError, AttributeError):
+        return None
 
 
 def _empty_call() -> dict[str, str]:

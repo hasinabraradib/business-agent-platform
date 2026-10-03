@@ -375,6 +375,41 @@ async def test_openai_compat_error_mapping(response, error, match) -> None:
         assert not isinstance(exc_info.value, ChatUnavailable)
 
 
+# Groq's reply when the model's tool arguments break the schema (seen in the real run).
+GROQ_TOOL_USE_FAILED = {
+    "message": "Tool call validation failed: parameters for tool capture_lead did not match "
+    "schema: errors: [`/name`: minLength: got 0, want 1]",
+    "type": "invalid_request_error",
+    "code": "tool_use_failed",
+    "failed_generation": '{"name": "capture_lead", "arguments": {\n  "name": "",\n  '
+    '"contact": "",\n  "interest": "50 sarees for a wedding"\n}}',
+}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(400, json={"error": GROQ_TOOL_USE_FAILED}),
+        httpx.Response(200, content=_sse({"error": GROQ_TOOL_USE_FAILED})),
+    ],
+)
+async def test_openai_compat_hands_back_tool_calls_the_provider_rejected(response) -> None:
+    # Was a ChatError (an apology to the customer); the registry should validate the attempt
+    # and return the errors to the model instead.
+    _, calls, finish = await collect(mocked(OpenAICompatChatProvider, lambda r: response))
+    assert [(c.name, c.arguments) for c in calls] == [
+        ("capture_lead", {"name": "", "contact": "", "interest": "50 sarees for a wedding"})
+    ]
+    assert finish.assistant.tool_calls == calls
+
+
+async def test_openai_compat_other_tool_failures_still_raise() -> None:
+    garbled = {**GROQ_TOOL_USE_FAILED, "failed_generation": "not json"}
+    response = httpx.Response(400, json={"error": garbled})
+    with pytest.raises(ChatError, match="Tool call validation failed"):
+        await collect(mocked(OpenAICompatChatProvider, lambda r: response))
+
+
 async def test_openai_compat_rate_limit_carries_retry_after() -> None:
     # Groq's per-minute token limit answers 429 with "Retry-After: 5"; the chain uses it.
     response = httpx.Response(

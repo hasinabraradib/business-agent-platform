@@ -197,8 +197,8 @@ outcomes, searches, timings and the model that answered.
   exact match.
 - **At most 2 searches per message** (`CHAT_MAX_SEARCHES`). After that, the model gets no tool
   and must answer with what it has.
-- **The registry is the extension point:** tools live in a `ToolRegistry`, so reservations,
-  order lookup and lead capture can be added as more tools.
+- **The registry is the extension point:** tools live in a `ToolRegistry`; the action tools
+  (catalogue, reservations, order lookup, leads) are described under [Tools](#tools).
 
 **Grounding and outcomes.** Every fact about the business (prices, hours, policies, stock,
 location) must come from a search result or earlier source in this conversation, and is cited
@@ -209,8 +209,11 @@ the model left it out). The outcome is decided in code from what can be verified
 - **`no_answer`:** a search was made but nothing was cited (nothing relevant, or an ungrounded
   reply), the model reported it could not help (off-topic, or a booking it can't make), or it
   claimed an answer with nothing to verify it. These feed the knowledge-gaps report.
+- **`action`:** a write tool completed in this turn (a reservation booked, a lead saved).
 - **`smalltalk`:** no search and no claim.
 - **`error`:** generation failed.
+
+A successful order lookup also counts as `answered`, because the facts come from a tool result.
 
 The model's hidden status tag (`[[answered]]`, `[[no_answer]]`, `[[smalltalk]]`, stripped
 before streaming) is used only where code cannot decide: smalltalk versus a polite "can't help"
@@ -259,10 +262,13 @@ Measured so far:
   to the first token): about 0.1 ms for a direct reply, and 3 ms (max 5 ms) for a reply that
   searches. Real latency is therefore almost entirely the model's time plus the query-embedding
   call.
-- **Real Gemini, 2026-10-03:** blocked. `gemini-3.8-flash` was overloaded (503) and the free-tier
+- **Real Gemini, 2026-10-03 (chat quality):** blocked. `gemini-3.8-flash` was overloaded (503) and the free-tier
   daily quota of `gemini-3.6-flash` (20 requests) was exhausted. The failover itself worked
   (503 → fallback in milliseconds → clean apology in 1.8 s), but no answer timings could be
   measured. Re-run `evals/chat_script.py` once quota is available.
+- **Real Gemini, 2026-10-03 (action tools):** blocked. Both models returned the free-tier daily
+  quota error (429, 20 requests a day per model) on the first message. Run
+  `evals/chat_script.py --suite actions` once quota is available.
 
 **Protections for the public endpoint** (widget keys are visible in websites):
 - **Allowed origins:** widget requests must come from one of the tenant's `allowed_origins`.
@@ -275,6 +281,146 @@ Measured so far:
 - **Failures:** a model error or timeout (first token, idle gap or total) ends the stream with an
   `error` event and a short apology with the fallback contact, and is stored with the error. A
   stream never hangs.
+
+## Tools
+
+The model chooses tools; code decides what they may do. Each tenant's `enabled_tools` setting
+lists the tools offered to its model. A tool not in the list is never offered, and a call to it
+is refused (`not_allowed`). The demo restaurant has `search_knowledge`, `query_catalog`,
+`create_reservation` and `capture_lead`. The demo shop has `search_knowledge`, `query_catalog`,
+`lookup_order` and `capture_lead`.
+
+Rules for every tool:
+- **Validated arguments:** arguments are checked by a Pydantic model (unknown fields
+  rejected). Invalid arguments are never executed: the validation errors go back to the model
+  so it can ask the customer or try again.
+- **Results are data:** tool results go to the model inside nonce-delimited tags, like search
+  results, and the prompt treats them as data, never as instructions.
+- **Every call is recorded** in `tool_calls`, linked to the assistant message, with its
+  arguments, status (`ok`, `invalid_arguments`, `not_allowed`, `refused`,
+  `needs_confirmation`, `rate_limited`, `error`), a result summary and its duration.
+- **Per-visitor limits:** Redis fixed windows per tenant, visitor and tool. Write tools allow 6
+  calls an hour; `lookup_order` allows 5.
+
+| Tool | Does | Arguments |
+|---|---|---|
+| `search_knowledge` | Searches the business's documents (see [Chat](#chat)) | `query` |
+| `query_catalog` | Lists and filters catalogue rows: menus, product lists | `text`, `category`, `min_price`, `max_price`, `in_stock`, `attributes` (name contains value), `sort`, `limit` (1–25) |
+| `create_reservation` | Books a table (write) | `date`, `time` (HH:MM), `party_size`, `name`, `phone`, `notes` |
+| `lookup_order` | Shows an order's status | `order_number`, `phone_last4` |
+| `capture_lead` | Saves a sales enquiry for the business to follow up (write) | `name`, `contact` (phone or email), `interest` |
+
+**Catalogue.** Upload a CSV with `catalog=true` on `POST /v1/documents`. It is chunked and
+embedded like any document, so it stays searchable. Each row is also stored in
+`catalog_items` with its name, alternative name (e.g. Bengali), category, price, currency, stock
+flag and the remaining columns as attributes. Re-ingesting replaces the rows. The optional
+`catalog_mapping` form field (JSON) maps fields to CSV columns:
+
+```json
+{"name": "dish_en", "alt_name": "dish_bn", "category": "category",
+ "price": "price_bdt", "currency": "BDT", "in_stock": "stock_status"}
+```
+
+- **Auto-detection:** fields left out are detected from common column names
+  (`name`/`dish_en`/`product`, `name_bn`/`dish_bn`, `category`, `price`/`price_bdt`,
+  `stock`/`in_stock`/`available`).
+- **Currency:** a column, a literal code, a price-column suffix (`price_bdt`), or the tenant's
+  `currency` setting.
+- **Stock:** "no", "out of stock", "sold out" and similar mean out of stock.
+- **Attributes:** every other column becomes an attribute, with its key lowercased and spaces
+  turned into underscores.
+
+Catalogue results cite the row's chunk, so `[n]` markers and citations work as for search
+results. Both demo CSVs (`menu.csv`, `products.csv`) are catalogues.
+
+**Confirmation before writing.** `create_reservation` and `capture_lead` never write on the
+first call. The rule is enforced in code, not left to the prompt:
+1. The first call stores a pending proposal and returns "NOT DONE YET" with the details, which
+   the assistant reads back to the customer.
+2. The write happens only when the model calls again with the same details (compared after
+   normalising name case and phone digits), in a later customer turn than the proposal, within
+   30 minutes, and when the customer's message reads as a confirmation ("yes", "confirm", "ji",
+   "haa", "thik ache", "হ্যাঁ", "করুন"; any "no"/"na"/"না"/"wait" blocks it).
+3. Changed details produce a new proposal, which needs its own confirmation.
+4. A repeated confirmation never writes twice: the proposal is marked done, the booking or
+   lead has a unique link to it, and later calls get "Already done" with the existing
+   reference.
+
+**Reservations.**
+- **Settings:** each tenant has `opening_hours` (per weekday, e.g.
+  `{"mon": [["12:00", "23:00"]]}`; a closing time after midnight is allowed) and
+  `max_online_party_size`.
+- **Timezone:** dates and times are the business's local time in its `timezone`.
+- **Refused:** past times, times less than 30 minutes away, more than 60 days ahead, outside
+  opening hours (last seating 30 minutes before closing), and no hours configured. Parties
+  over the limit get the phone contact instead.
+- **Result:** a confirmed booking gets a reference such as `R-7KQ2MX`.
+
+**Order lookup privacy.** `lookup_order` needs the order number and the last 4 digits of the
+phone number on the order.
+- **Same answer on a miss:** an unknown order and wrong digits return exactly the same "not
+  found" text, so the tool cannot be used to discover which order numbers exist.
+- **Attempt limit:** 5 lookups per visitor per hour.
+- **Limited result:** only status, items, total and shipping details are returned, never the
+  phone number.
+
+**Leads.** The assistant collects a name, a contact and what the customer wants, confirms, and
+saves the lead linked to the conversation. It only promises a follow-up time if the tenant has
+set `follow_up_promise` (the demo shop: "within one working day"). Otherwise it says the team
+will be in touch, with no time.
+
+**Admin endpoints** (admin key):
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/reservations` | List reservations (filter by `status`) |
+| `PATCH /v1/reservations/{id}` | Set status: `confirmed`, `cancelled`, `completed`, `no_show` |
+| `GET /v1/leads`, `GET /v1/orders`, `GET /v1/catalog` | List leads, orders, catalogue rows |
+| `GET` / `PUT /v1/webhooks/endpoint` | Show or set the webhook URL (the secret is shown once, when first created) |
+| `POST /v1/webhooks/endpoint/rotate-secret` | Issue a new signing secret (shown once) |
+| `GET /v1/webhooks/deliveries` | Delivery log: status, attempts, last status code and error |
+
+### Webhooks
+
+When a reservation is booked or a lead is saved, an event is recorded in the same transaction
+as the write. The worker then POSTs it to the tenant's webhook URL. Events are
+`reservation.created` and `lead.created`, with this body:
+
+```json
+{"id": "<delivery id>", "type": "reservation.created", "created_at": "2026-10-03T13:31:02Z",
+ "tenant_id": "<tenant id>", "data": {"id": "<reservation id>", "reference": "R-7KQ2MX",
+ "starts_at": "2026-10-04T20:00:00+06:00", "date": "2026-10-04", "time": "20:00",
+ "party_size": 4, "name": "...", "phone": "...", "notes": null, "conversation_id": "..."}}
+```
+
+Headers:
+- `X-BAP-Event`: the event type.
+- `X-BAP-Delivery`: the delivery id. It stays the same across retries, so use it to ignore
+  duplicates.
+- `X-BAP-Timestamp`: Unix seconds at send time.
+- `X-BAP-Signature`: `v1=` followed by the lowercase hex HMAC-SHA256 of
+  `"<timestamp>.<raw body>"`, keyed with the endpoint secret (`whsec_...`).
+
+To verify a delivery, compute the HMAC over the raw bytes received (not re-serialised JSON).
+Compare it in constant time, and reject timestamps more than 5 minutes from your clock:
+
+```python
+expected = "v1=" + hmac.new(secret.encode(), f"{ts}.".encode() + raw_body, "sha256").hexdigest()
+ok = hmac.compare_digest(expected, signature) and abs(time.time() - int(ts)) <= 300
+```
+
+Delivery rules:
+- **Success:** any 2xx.
+- **Retries:** other responses and network errors are retried after 10 s, 1 min, 5 min, 30
+  min and 2 h (6 attempts in all), then the delivery is marked `failed`. Every attempt is
+  logged on the delivery.
+- **SSRF protection:** URLs must be public http(s). Private, loopback, link-local and metadata
+  addresses are refused when the URL is set and again at each delivery. The connection is
+  pinned to the checked IP, and redirects are not followed.
+
+[`integrations/n8n/`](integrations/n8n/) has an n8n workflow that verifies the signature,
+appends each event to a Google Sheet and sends an email alert. It is checked only as valid n8n
+export JSON and has **not** been tested end to end.
 
 ## Widget
 

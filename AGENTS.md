@@ -26,8 +26,10 @@ backend/app/          FastAPI app: main.py (create_app), config.py (Settings), d
   retrieval/          Retriever (vector/keyword/hybrid/hybrid_rerank), RRF, rerankers, cache
   llm/                ChatProvider interface (tool calls), Gemini, OpenAI-compatible, fake,
                       and ChatChain (fast failover across models/providers)
-  chat/               tool loop (service.py), ToolRegistry + search_knowledge (tools.py),
-                      prompts, stream filters, outcomes, rate limits
+  chat/               tool loop (service.py), ToolRegistry, WriteTool + search_knowledge
+                      (tools.py), prompts, stream filters, outcomes, rate limits, confirm.py
+  chat/actions/       query_catalog, create_reservation, lookup_order, capture_lead
+  webhooks/           event recording, HMAC signing, worker delivery with retries
   worker.py           arq WorkerSettings (`arq app.worker.WorkerSettings`)
 backend/alembic/      migrations (async env.py; runs as OWNER_DATABASE_URL)
 backend/tests/        pytest suite (conftest.py sets up the test database)
@@ -35,7 +37,8 @@ web/widget/           embeddable chat widget (TypeScript, esbuild, no UI framewo
   src/tokens.ts       design tokens: the single source for colours, radii, spacing, shadows
 web/demo/             two static demo sites embedding the widget (served on :8080)
 scripts/demo-setup.sh builds the widget and writes the git-ignored demo page config
-evals/                assistant evaluations (placeholder)
+evals/                assistant evaluations; chat_script.py runs scripted chats against a live API
+integrations/n8n/     n8n workflow for webhook events (untested end to end)
 demo/                 fictional demo knowledge ingested by `seed-demo`
 ```
 
@@ -98,8 +101,15 @@ cd web/widget && npm ci && npm run check   # widget: types, lint, tests, build +
   inside the nonce-delimited tags built in `app/chat/prompts.py`. `answered` requires a valid
   citation to a source found in the conversation; never relax `decide_outcome` without a test.
   Every chat run must end with exactly one done or error event. New capabilities are tools:
-  subclass `Tool` and register it in `ToolRegistry` (wired in `app/chat/deps.py`). Tests use
-  `FakeChatProvider` (scripted tool calls); `conftest.py` forces `CHAT_PROVIDER=fake`.
+  subclass `Tool` with a Pydantic `ToolArgs` model and register it in `ToolRegistry` (wired in
+  `app/chat/deps.py`); tenants opt in through `enabled_tools`. Anything that writes on a
+  customer's behalf subclasses `WriteTool`, which enforces the confirmation turn and
+  idempotency in code; never write directly from `run()`. Tool results go back to the model
+  through `tool_result_block` (nonce-tagged) and must not leak data the customer hasn't proved
+  they may see (see `lookup_order`). Tests use `FakeChatProvider` (scripted tool calls);
+  `conftest.py` forces `CHAT_PROVIDER=fake`.
+- Webhook events are recorded with `record_event` inside the write's transaction and enqueued
+  after commit. Outbound HTTP goes through `post_json`/`fetch_url` (SSRF checks, pinned IP).
 - New chat providers go in `app/llm/` only (subclass + registry entry).
 - Widget: never use `innerHTML`/`insertAdjacentHTML`; build DOM with `createElement` and
   `textContent` (`src/render.ts` for any server or model text, http/https links only). Colours,

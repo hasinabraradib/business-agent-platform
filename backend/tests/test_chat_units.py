@@ -6,10 +6,12 @@ import pytest
 
 from app.chat.filters import CitationFilter, OutcomeTagFilter, decide_outcome
 from app.chat.prompts import (
+    CITE_REMINDER,
     ContextChunk,
     apology,
     customer_block,
     local_time,
+    mentions_contact,
     search_results_block,
     system_prompt,
     uses_bengali_script,
@@ -32,6 +34,19 @@ def _run(filter_, pieces):
         (["[1] starts with a citation"], None, "[1] starts with a citation"),
         (["[[answered]]"], "answered", ""),
         (["[[bogus]]\nText"], None, "[[bogus]]\nText"),
+        # gpt-oss: the tag at the end, then the reply repeated; the tag ends the reply
+        (
+            ["Apnar naam?", "[[small", "talk]]\n\nPhone number?[[smalltalk]]"],
+            "smalltalk",
+            "Apnar naam?",
+        ),
+        (["We open at 2:30 pm [1]. [[answered]]"], "answered", "We open at 2:30 pm [1]."),
+        (
+            ["Hi [[1]] and [", "[2]] stay", " for the citation filter"],
+            None,
+            "Hi [[1]] and [[2]] stay for the citation filter",
+        ),
+        (["Ends with [["], None, "Ends with [["),
     ],
 )
 def test_outcome_tag_filter(pieces, tag, text) -> None:
@@ -54,6 +69,10 @@ def test_outcome_tag_filter_streams_without_waiting_when_there_is_no_tag() -> No
         ("See [note] and [] here", [], "See [note] and [] here"),
         ("Two [2] then [1] again [2]", [2, 1], "Two [2] then [1] again [2]"),
         ("Ends with [", [], "Ends with ["),
+        ("Opens 2:30 pm [[1]].", [1], "Opens 2:30 pm [1]."),  # gpt-oss doubles the brackets
+        ("A [[1, 2]] b [[9]] c", [1, 2], "A [1][2] b c"),
+        ("Keep [[note]] text", [], "Keep [[note]] text"),
+        ("Ends with [[", [], "Ends with [["),
     ],
 )
 def test_citation_filter(text, kept, expected) -> None:
@@ -198,3 +217,30 @@ def test_invalid_tenant_settings_fall_back_to_defaults_per_field() -> None:
     assert settings.accent_color == "#C5EE4F"
     assert settings.suggested_questions == []
     assert settings.assistant_name == "Nodi"
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("Call us on 01700-000000 (11 am to 10 pm).", True),
+        ("phone-e 01700\u2011000000 (11\u202fam\u201110\u202fpm) e jogajog korun", True),
+        ("Call 01700 000000 for any other help.", True),
+        ("We don't have weather info.", False),
+        ("Order JL-10232 ships tomorrow.", False),
+    ],
+)
+def test_mentions_contact_matches_the_phone_number_not_the_wording(reply, expected) -> None:
+    assert mentions_contact(reply, "call us on 01700-000000 (11 am to 10 pm)") is expected
+
+
+def test_mentions_contact_matches_an_email() -> None:
+    contact = "WhatsApp 01800-000000 or email hello@jamdanilane.example"
+    assert mentions_contact("Email Hello@JamdaniLane.example", contact)
+    assert not mentions_contact("Email us any time", contact)
+
+
+def test_search_results_end_with_a_citation_reminder_outside_the_data_tags() -> None:
+    # gpt-oss left facts uncited until the reminder sat right after the results.
+    block = search_results_block([ContextChunk(1, "Menu", "row 1", "Kacchi 480")], "n0nce")
+    assert block.endswith(f"</search-results-n0nce>\n{CITE_REMINDER}")
+    assert CITE_REMINDER not in search_results_block([], "n0nce")  # nothing to cite

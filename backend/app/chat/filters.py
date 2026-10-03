@@ -5,21 +5,30 @@ import re
 from app.chat.prompts import OUTCOME_TAGS
 
 TAG = re.compile(r"^\s*\[\[(" + "|".join(OUTCOME_TAGS) + r")\]\][ \t]*\n?")
+ANY_TAG = re.compile(r"\[\[(" + "|".join(OUTCOME_TAGS) + r")\]\]")
+TAG_TEXTS = tuple(f"[[{tag}]]" for tag in OUTCOME_TAGS)
 
 
 class OutcomeTagFilter:
-    """Strips the leading [[status]] line, buffering only until it can be recognised."""
+    """Strips the leading [[status]] line, buffering only until it can be recognised.
+
+    Some models (gpt-oss) write the tag at the end instead, and then keep going: a status tag
+    after the reply has started ends the reply, and everything after it is dropped. Text that
+    could be the start of a tag is held back until it resolves; "[[1]]" passes through.
+    """
 
     MAX_TAG_PREFIX = 24
 
     def __init__(self) -> None:
         self.tag: str | None = None
         self._buffer = ""
-        self._done = False
+        self._done = False  # past the leading-tag check
+        self._ended = False  # a later tag ended the reply
+        self._held = ""  # a possible tag prefix at the end of the text so far
 
     def feed(self, text: str) -> str:
         if self._done:
-            return text
+            return self._scan(text)
         self._buffer += text
         stripped = self._buffer.lstrip()
         match = TAG.match(self._buffer)
@@ -37,16 +46,32 @@ class OutcomeTagFilter:
 
     def flush(self) -> str:
         if self._done:
-            return ""
+            held, self._held = self._held, ""
+            return "" if self._ended else held
         match = TAG.match(self._buffer)
         if match:
             self.tag = match.group(1)
-            return self._release(self._buffer[match.end() :])
-        return self._release(self._buffer)
+            return self._release(self._buffer[match.end() :]) + self.flush()
+        return self._release(self._buffer) + self.flush()
 
     def _release(self, text: str) -> str:
         self._done = True
         self._buffer = ""
+        return self._scan(text)
+
+    def _scan(self, text: str) -> str:
+        if self._ended:
+            return ""
+        text, self._held = self._held + text, ""
+        if match := ANY_TAG.search(text):
+            self.tag = self.tag or match.group(1)
+            self._ended = True
+            return text[: match.start()].rstrip()
+        start = text.rfind("[[")
+        if start == -1 and text.endswith("["):
+            start = len(text) - 1
+        if start != -1 and any(t.startswith(text[start:]) for t in TAG_TEXTS):
+            text, self._held = text[:start], text[start:]
         return text
 
 
@@ -66,16 +91,24 @@ class CitationFilter:
         self.dropped: list[str] = []
         self._space = ""  # trailing whitespace not yet emitted
         self._marker = ""  # an open "[..." not yet resolved
+        self._double = False  # the open marker started "[[" (some models write [[1]])
+        self._skip_close = False  # swallow the second "]" of a resolved [[n]]
 
     def feed(self, text: str) -> str:
         out: list[str] = []
         for char in text:
-            if self._marker:
+            if self._skip_close:
+                self._skip_close = False
+                if char == "]":
+                    continue
+            if self._marker == "[" and char == "[" and not self._double:
+                self._double = True
+            elif self._marker:
                 self._marker += char
                 if char == "]":
                     out.append(self._resolve())
                 elif not (char.isdigit() or char in ", ") or len(self._marker) > self.MAX_MARKER:
-                    out.append(self._space + self._marker)
+                    out.append(self._space + self._open() + self._marker)
                     self._space = self._marker = ""
             elif char == "[":
                 self._marker = "["
@@ -86,12 +119,19 @@ class CitationFilter:
                 self._space = ""
         return "".join(out)
 
+    def _open(self) -> str:
+        """The extra "[" of a "[[" marker, given back when the marker turns out to be text."""
+        extra, self._double = ("[" if self._double else ""), False
+        return extra
+
     def _resolve(self) -> str:
-        marker, space = self._marker, self._space
+        marker, space, double = self._marker, self._space, self._double
         self._marker = self._space = ""
         numbers = [part for part in re.split(r"[,\s]+", marker[1:-1]) if part]
         if not numbers or not all(part.isdigit() for part in numbers):
-            return space + marker  # "[]" or "[note]": ordinary text
+            return space + self._open() + marker  # "[]" or "[note]": ordinary text
+        self._double = False
+        self._skip_close = double
         kept = [int(n) for n in numbers if int(n) in self.valid]
         if len(kept) != len(numbers):
             self.dropped.append(marker)
@@ -103,7 +143,7 @@ class CitationFilter:
         return space + "".join(f"[{n}]" for n in kept)
 
     def flush(self) -> str:
-        text = self._space + self._marker
+        text = self._space + (self._open() if self._marker else "") + self._marker
         self._space = self._marker = ""
         return text
 

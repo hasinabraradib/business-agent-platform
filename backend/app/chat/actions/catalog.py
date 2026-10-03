@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 from sqlalchemy import Select, func, or_
 
+from app.chat.prompts import CITE_REMINDER
 from app.chat.tools import Tool, ToolArgs, ToolResult, TurnContext, location
 from app.models import CatalogItem, Chunk, Document
 
@@ -61,8 +62,9 @@ class QueryCatalogTool(Tool):
         return (
             "- Use query_catalog for list, filter, count, cheapest/most expensive and 'under X' "
             "questions about dishes or products (e.g. 'which dishes have nuts?' -> attributes "
-            '{"allergens": "nuts"}; "500 takar niche" -> max_price 500). Use search_knowledge '
-            "for everything else. Cite catalogue rows by their numbers like search results."
+            '[{"name": "allergens", "contains": "nuts"}]; "500 takar niche" -> max_price 500). '
+            "Use search_knowledge for everything else. Cite catalogue rows by their numbers "
+            "[n] like search results."
         )
 
     def _filtered(self, context: TurnContext, query: Select, args: QueryCatalogArgs) -> Select:
@@ -131,8 +133,9 @@ class QueryCatalogTool(Tool):
             body = "No catalogue items match these filters."
         else:
             body = f"{total} matching items, showing {len(lines)}:\n" + "\n".join(lines)
+        content = f"<catalog-results-{context.nonce}>\n{body}\n</catalog-results-{context.nonce}>"
         return ToolResult(
-            f"<catalog-results-{context.nonce}>\n{body}\n</catalog-results-{context.nonce}>",
+            f"{content}\n{CITE_REMINDER}" if lines else content,
             summary=f"{total} matching, {len(lines)} shown",
         )
 

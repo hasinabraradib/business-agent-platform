@@ -1,10 +1,14 @@
 """Catalogue CSVs stored as catalog_items, and the query_catalog tool."""
 
+import json
+import re
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.chat.prompts import system_prompt
+from app.chat.actions.catalog import QueryCatalogArgs, QueryCatalogTool
+from app.chat.prompts import CITE_REMINDER, system_prompt
 from app.chat.settings import TenantChatSettings
 from app.embeddings import FakeEmbeddingProvider
 from app.ingestion.pipeline import IngestDeps, process_document
@@ -194,6 +198,7 @@ async def test_query_catalog_counts_and_cites_rows(app_engine, menu) -> None:
     assert set(context.valid_markers) == {1, 2}  # citable like search results
     assert context.sources[1].metadata["row"] == 1
     assert "BDT 480" in content and "allergens: Dairy, Nuts" in content
+    assert content.endswith(f"</catalog-results-n0nce123>\n{CITE_REMINDER}")
 
 
 async def test_query_catalog_in_stock_filter(
@@ -270,3 +275,11 @@ async def test_offline_model_routes_list_questions_to_the_catalogue(
     assert body["outcome"] == "answered"
     assert body["reply"] == ("Here's what we have: Kacchi Biryani [1], Morog Polao [2], Firni [3]")
     assert [c["marker"] for c in body["citations"]] == [1, 2, 3]
+
+
+def test_guidance_example_matches_the_argument_schema() -> None:
+    # The guidance once showed attributes as {"allergens": "nuts"}, which the schema rejects.
+    guidance = QueryCatalogTool().guidance(None)
+    example = json.loads(re.search(r"attributes (\[.*?\])", guidance).group(1))
+    args = QueryCatalogArgs(attributes=example)
+    assert args.attributes[0].name == "allergens"

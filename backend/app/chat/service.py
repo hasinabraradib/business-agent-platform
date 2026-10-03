@@ -29,6 +29,7 @@ from app.chat.prompts import (
     contact_line,
     customer_block,
     history_user_block,
+    mentions_contact,
     new_nonce,
     system_prompt,
     uses_bengali_script,
@@ -269,7 +270,7 @@ class ChatService:
             lookup=context.lookups > 0,
         )
         contact = turn.settings.fallback_contact
-        if outcome == "no_answer" and contact and contact not in "".join(run.reply):
+        if outcome == "no_answer" and contact and not mentions_contact("".join(run.reply), contact):
             extra = contact_line(turn.settings, turn.message)
             run.reply.append(extra)
             yield TokenEvent(extra)

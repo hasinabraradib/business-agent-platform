@@ -62,10 +62,14 @@ Current local time at {business}: {local_time(settings, now)}.
 How you sound
 - Like a friendly member of staff texting a customer: short, warm and natural. One to three
   sentences; a short list only when listing several items.
-- Reply in the language and script of the customer's latest message: English -> English;
+- Reply in the language and script of the customer's latest message, even if earlier messages
+  used another one: English -> English;
   Bengali script -> Bengali script; Bengali written in Latin letters (Banglish) -> natural
   Banglish, the way people in Dhaka text (e.g. "Ji, amra ekhon khola, raat 11 ta porjonto."),
-  mixing in everyday English words, never stiff transliteration.
+  mixing in everyday English words, never stiff transliteration. Keep the whole reply in that
+  one script: never switch from Banglish to Bengali script (or back) mid-reply.
+- Say times and prices the way people do ("raat 11 ta", "8 pm", "480 taka"), not "23:00".
+- Give the contact details only when you can't help or the customer asks for them.
 - Never say "As an AI", "based on the information provided" or "according to our records",
   never end with "How else can I assist you?", and don't restate the question. Speak as the
   business ("we", "amra").
@@ -75,9 +79,11 @@ How you sound
 
 Facts and the search_knowledge tool
 - Every fact about {business} (prices, dishes or products, opening hours, location, policies,
-  stock, delivery) must come from a search_knowledge result or from the earlier sources, and
-  must be cited with its number in square brackets, e.g. [3]. Never guess and never use outside
-  knowledge about the business.
+  stock, delivery) must come from a tool result (search_knowledge, query_catalog) or from the
+  earlier sources. Put that result's number in square brackets right after the fact, every
+  time: "Kacchi Biryani 480 taka [2].", "Ji, amra raat 11 ta porjonto khola [1]." A reply that
+  states business facts without [n] markers counts as unanswered. Never guess and never use
+  outside knowledge about the business.
 - Call search_knowledge only when you need such a fact and it is not already in the earlier
   sources. Do not search for greetings, thanks, small talk, clarifying questions, or follow-ups
   already answered in the conversation. Write the query yourself as short keywords likely to
@@ -109,9 +115,19 @@ def _passages(chunks: list[ContextChunk]) -> str:
     )  # fmt: skip
 
 
+# Appended after results (outside the data tags). gpt-oss ignored the system prompt's citation
+# rule in 3 of 3 probes, and followed this reminder next to the results in 3 of 3.
+CITE_REMINDER = (
+    "Cite each fact you use with its number in square brackets right after it, e.g. [1]."
+)
+
+
 def search_results_block(chunks: list[ContextChunk], nonce: str) -> str:
-    body = _passages(chunks) if chunks else "No relevant information was found for this search."
-    return f"<search-results-{nonce}>\n{body}\n</search-results-{nonce}>"
+    if not chunks:
+        body = "No relevant information was found for this search."
+        return f"<search-results-{nonce}>\n{body}\n</search-results-{nonce}>"
+    block = f"<search-results-{nonce}>\n{_passages(chunks)}\n</search-results-{nonce}>"
+    return f"{block}\n{CITE_REMINDER}"
 
 
 def customer_block(message: str, nonce: str, earlier: list[ContextChunk]) -> str:
@@ -146,6 +162,32 @@ def apology(settings: TenantChatSettings, customer_message: str) -> str:
         return f"{text} যোগাযোগ: {contact}" if contact else text
     text = "Sorry, I'm having trouble answering right now. Please try again in a moment."
     return f"{text} You can also reach us: {contact}" if contact else text
+
+
+DASHES = re.compile(r"[\u2010-\u2015\u2212]")
+
+
+def _loose(text: str) -> str:
+    """Lowercase, every kind of space as one space and every dash as "-": models often write
+    "01700\u2011000000" or "11\u202fam"."""
+    return " ".join(DASHES.sub("-", text).lower().split())
+
+
+PHONE = re.compile(r"\+?\d[\d\s\-\u2010-\u2015]{5,}\d")
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def mentions_contact(reply: str, contact: str) -> bool:
+    """Does the reply already give the contact? Models paraphrase it ("call 01700-000000,
+    11 am-10 pm"), so phone numbers and emails are compared, not the whole sentence."""
+    if not contact:
+        return False
+    phones = [re.sub(r"\D", "", p) for p in PHONE.findall(DASHES.sub("-", contact))]
+    emails = [e.lower() for e in EMAIL.findall(contact)]
+    if not phones and not emails:
+        return _loose(contact) in _loose(reply)
+    digits = re.sub(r"\D", "", reply)
+    return any(p in digits for p in phones) or any(e in reply.lower() for e in emails)
 
 
 def contact_line(settings: TenantChatSettings, customer_message: str) -> str:

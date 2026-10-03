@@ -269,6 +269,20 @@ async def test_failed_search_is_no_answer_with_the_contact(client, cafe) -> None
     assert body["retrieval"]["searches"][0]["relevant"] is False
 
 
+async def test_contact_is_not_appended_twice_when_the_model_spaced_it_oddly(
+    client, cafe, provider
+) -> None:
+    # gpt-oss writes narrow no-break spaces and non-breaking hyphens ("01700\u2011000000");
+    # an exact substring check missed them and appended the contact a second time.
+    tenant, _ = cafe
+    odd = FALLBACK.replace(" ", "\u202f").replace("-", "\u2011")
+    assert odd != FALLBACK
+    provider.responder = lambda request, model: f"[[no_answer]]\nSorry, we can't do that. {odd}"
+    body = (await chat(client, tenant.admin_key, "Can you deliver to the moon?")).json()
+    assert body["outcome"] == "no_answer"
+    assert "Contact:" not in body["reply"]
+
+
 async def test_business_facts_without_a_citation_are_not_answered(client, cafe, provider) -> None:
     tenant, _ = cafe
 

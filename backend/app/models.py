@@ -1,18 +1,23 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any, Literal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Computed,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
+    Time,
     UniqueConstraint,
     func,
     text,
@@ -27,7 +32,7 @@ DocumentStatus = Literal["pending", "processing", "ready", "failed"]
 DOCUMENT_STATUSES: tuple[str, ...] = ("pending", "processing", "ready", "failed")
 MessageRole = Literal["user", "assistant"]
 # no_answer feeds the knowledge-gaps report; error marks a failed generation.
-MessageOutcome = Literal["answered", "no_answer", "smalltalk", "error"]
+MessageOutcome = Literal["answered", "action", "no_answer", "smalltalk", "error"]
 # Fixed by the chunks.embedding column; every embedding provider must return this many dims.
 EMBEDDING_DIMENSIONS = 768
 
@@ -126,6 +131,9 @@ class Document(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
         String(32), nullable=False, default="pending", server_default="pending"
     )
     error: Mapped[str | None] = mapped_column(Text)
+    # CSV catalogues (menus, product lists): how columns map to catalog_items fields, or {} to
+    # detect them. NULL: not a catalogue.
+    catalog_mapping: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
@@ -223,7 +231,8 @@ class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
         ),
         CheckConstraint("role IN ('user', 'assistant')", name="messages_role_check"),
         CheckConstraint(
-            "outcome IS NULL OR outcome IN ('answered', 'no_answer', 'smalltalk', 'error')",
+            "outcome IS NULL OR outcome IN "
+            "('answered', 'action', 'no_answer', 'smalltalk', 'error')",
             name="messages_outcome_check",
         ),
         Index("ix_messages_conversation_created", "conversation_id", "created_at"),
@@ -250,3 +259,218 @@ class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     client_message_id: Mapped[str | None] = mapped_column(String(64))
     # Assistant messages: the customer message this replies to.
     in_reply_to: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+def _conversation_fk(name: str) -> ForeignKeyConstraint:
+    return ForeignKeyConstraint(
+        ["tenant_id", "conversation_id"],
+        ["conversations.tenant_id", "conversations.id"],
+        ondelete="SET NULL (conversation_id)",
+        name=name,
+    )
+
+
+class CatalogItem(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    """One row of a catalogue CSV (a dish, a product), for structured questions."""
+
+    __tablename__ = "catalog_items"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "document_id"],
+            ["documents.tenant_id", "documents.id"],
+            ondelete="CASCADE",
+            name="catalog_items_document_fkey",
+        ),
+        UniqueConstraint("document_id", "row", name="catalog_items_document_row_key"),
+        Index("ix_catalog_items_tenant_category", "tenant_id", "category"),
+    )
+
+    document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    row: Mapped[int] = mapped_column(Integer, nullable=False)
+    # The chunk holding the same row, so results can be cited like search results.
+    chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("chunks.id", ondelete="SET NULL")
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    alt_name: Mapped[str | None] = mapped_column(Text)  # e.g. the Bengali name
+    category: Mapped[str | None] = mapped_column(Text)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="BDT")
+    in_stock: Mapped[bool | None] = mapped_column(Boolean)
+    attributes: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+
+
+class PendingAction(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    """A write the assistant proposed and read back; executed only after the customer confirms
+    in a later turn."""
+
+    __tablename__ = "pending_actions"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
+    __table_args__ = (
+        _conversation_fk("pending_actions_conversation_fkey"),
+        CheckConstraint("status IN ('pending', 'done')", name="pending_actions_status_check"),
+        Index("ix_pending_actions_lookup", "conversation_id", "tool", "args_hash"),
+    )
+
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    tool: Mapped[str] = mapped_column(String(64), nullable=False)
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    args_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    proposed_in: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    result_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    result_summary: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class Reservation(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "reservations"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
+    __table_args__ = (
+        _conversation_fk("reservations_conversation_fkey"),
+        UniqueConstraint("tenant_id", "reference", name="reservations_tenant_reference_key"),
+        UniqueConstraint("pending_action_id", name="reservations_pending_action_key"),
+        CheckConstraint(
+            "status IN ('confirmed', 'cancelled', 'completed', 'no_show')",
+            name="reservations_status_check",
+        ),
+        CheckConstraint("party_size > 0", name="reservations_party_size_check"),
+        Index("ix_reservations_tenant_starts_at", "tenant_id", "starts_at"),
+    )
+
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    pending_action_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    reference: Mapped[str] = mapped_column(String(16), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    local_date: Mapped[date] = mapped_column(Date, nullable=False)
+    local_time: Mapped[time] = mapped_column(Time, nullable=False)
+    party_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="confirmed", server_default="confirmed"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class Order(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "orders"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "order_number", name="orders_tenant_number_key"),
+        CheckConstraint(
+            "status IN ('processing', 'shipped', 'delivered', 'cancelled')",
+            name="orders_status_check",
+        ),
+    )
+
+    order_number: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="BDT")
+    phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    placed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    courier: Mapped[str | None] = mapped_column(Text)
+
+
+class Lead(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "leads"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
+    __table_args__ = (
+        _conversation_fk("leads_conversation_fkey"),
+        UniqueConstraint("pending_action_id", name="leads_pending_action_key"),
+        CheckConstraint("status IN ('new', 'contacted', 'closed')", name="leads_status_check"),
+    )
+
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    pending_action_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    contact: Mapped[str] = mapped_column(Text, nullable=False)
+    interest: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="new", server_default="new"
+    )
+
+
+class ToolCallRecord(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    """Every tool call, for replay in the dashboard."""
+
+    __tablename__ = "tool_calls"
+    __table_args__ = (
+        _conversation_fk("tool_calls_conversation_fkey"),
+        ForeignKeyConstraint(
+            ["tenant_id", "message_id"],
+            ["messages.tenant_id", "messages.id"],
+            ondelete="CASCADE",
+            name="tool_calls_message_fkey",
+        ),
+        CheckConstraint(
+            "status IN ('ok', 'invalid_arguments', 'not_allowed', 'refused', "
+            "'needs_confirmation', 'rate_limited', 'error')",
+            name="tool_calls_status_check",
+        ),
+        Index("ix_tool_calls_message", "message_id"),
+    )
+
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    step: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool: Mapped[str] = mapped_column(String(64), nullable=False)
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    result_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    duration_ms: Mapped[float] = mapped_column(Numeric(10, 1), nullable=False)
+
+
+class WebhookEndpoint(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "webhook_endpoints"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
+    __table_args__ = (UniqueConstraint("tenant_id", name="webhook_endpoints_tenant_key"),)
+
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    # HMAC signing secret. Needed in plain form to sign; readable only within the tenant (RLS).
+    secret: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+
+class WebhookDelivery(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
+    __tablename__ = "webhook_deliveries"
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'retrying', 'delivered', 'failed')",
+            name="webhook_deliveries_status_check",
+        ),
+        Index("ix_webhook_deliveries_tenant_created", "tenant_id", "created_at"),
+    )
+
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", server_default="pending"
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # [{at, status_code, error, duration_ms}]
+    attempt_log: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    last_status_code: Mapped[int | None] = mapped_column(Integer)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )

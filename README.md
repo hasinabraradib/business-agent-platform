@@ -243,12 +243,16 @@ per-turn nonce, and the prompt treats them as data, never as instructions.
 **Models, failover and latency.** `CHAT_MODELS` lists `provider:model` candidates in order. The
 default is `gemini-3.8-flash` (Google's default general-purpose model) with `gemini-3.6-flash` as
 fallback. Setting `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY` and `OPENAI_COMPAT_MODEL`
-adds any OpenAI-compatible endpoint as a cross-provider fallback (streaming and tool calls
-supported). Embeddings stay on Gemini only, because vectors from different models are not
-comparable.
+makes any OpenAI-compatible endpoint the **primary** model, with the `CHAT_MODELS` entries as
+its fallbacks (streaming and tool calls supported). The demo setup uses Groq with
+`openai/gpt-oss-120b` and `OPENAI_COMPAT_REASONING_EFFORT=low`. That is Groq's featured model,
+it supports tool use and streaming, and its free tier allows 1,000 requests a day but only 8,000
+tokens a minute: about one searching turn a minute. Embeddings stay on Gemini only, because
+vectors from different models are not comparable.
 - **Fast failover:** if a model returns overload or rate-limit errors, or produces no token or
   tool call within `CHAT_FAILOVER_SECONDS` (3 s), the next candidate is tried at once. The
-  failed model is skipped for a minute (`CHAT_COOLDOWN_SECONDS`), so the following turns don't
+  failed model is skipped for a minute (`CHAT_COOLDOWN_SECONDS`), or only as long as its
+  `Retry-After` header asks if that is shorter, so the following turns don't
   pay the same delay. Once a model has started streaming it is never switched silently.
 - **Recorded model:** the stored message records the model that actually answered.
 - **Thinking:** each request uses the model's lowest thinking level (3.8-flash: low; 3.6-flash:
@@ -266,6 +270,12 @@ Measured so far:
   daily quota of `gemini-3.6-flash` (20 requests) was exhausted. The failover itself worked
   (503 → fallback in milliseconds → clean apology in 1.8 s), but no answer timings could be
   measured. Re-run `evals/chat_script.py` once quota is available.
+- **Groq `openai/gpt-oss-120b`, 2026-10-03** (`evals/chat_script.py`, both suites, all on the
+  primary model): time to first token 0.4 to 0.9 s for direct replies and 1.4 to 2.5 s for
+  replies that search or query the catalogue; totals within 0.1 s of first token. Both targets
+  are met. The free tier allows 8,000 tokens a minute (about one searching turn a minute) and
+  200,000 tokens a day (about 25 to 30 searching turns); the daily token limit ended
+  the run before the last shop turns of the final pass.
 - **Real Gemini, 2026-10-03 (action tools):** blocked. Both models returned the free-tier daily
   quota error (429, 20 requests a day per model) on the first message. Run
   `evals/chat_script.py --suite actions` once quota is available.
@@ -293,7 +303,9 @@ is refused (`not_allowed`). The demo restaurant has `search_knowledge`, `query_c
 Rules for every tool:
 - **Validated arguments:** arguments are checked by a Pydantic model (unknown fields
   rejected). Invalid arguments are never executed: the validation errors go back to the model
-  so it can ask the customer or try again.
+  so it can ask the customer or try again. That includes calls a provider rejects against the
+  schema itself (Groq's `tool_use_failed`), which are handed back to the registry as ordinary
+  calls.
 - **Results are data:** tool results go to the model inside nonce-delimited tags, like search
   results, and the prompt treats them as data, never as instructions.
 - **Every call is recorded** in `tool_calls`, linked to the assistant message, with its

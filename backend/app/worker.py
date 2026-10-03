@@ -10,11 +10,12 @@ import uuid
 from arq import func
 from arq.connections import RedisSettings
 
+from app.channels.alerts import send_staff_alert
 from app.config import get_settings
 from app.db import get_engine, get_sessionmaker
 from app.embeddings import get_embedding_provider
 from app.ingestion.pipeline import IngestDeps, process_document
-from app.ingestion.queue import INGEST_JOB, WEBHOOK_JOB
+from app.ingestion.queue import INGEST_JOB, STAFF_ALERT_JOB, WEBHOOK_JOB
 from app.ingestion.storage import get_storage
 from app.webhooks.delivery import deliver
 
@@ -65,6 +66,13 @@ async def deliver_webhook(ctx: dict, tenant_id: str, delivery_id: str) -> str:
     return result.status
 
 
+async def staff_alert(ctx: dict, tenant_id: str, conversation_id: str, kind: str) -> str:
+    """Tell the tenant's Telegram staff chat that a customer needs a person."""
+    return await send_staff_alert(
+        ctx["deps"].sessionmaker, uuid.UUID(tenant_id), uuid.UUID(conversation_id), kind
+    )
+
+
 class WorkerSettings:
     functions = (
         # The job records its own failures on the document; arq retries only if the job is
@@ -76,6 +84,7 @@ class WorkerSettings:
             timeout=get_settings().ingest_job_timeout_seconds,
         ),
         func(deliver_webhook, name=WEBHOOK_JOB, max_tries=1, timeout=60),
+        func(staff_alert, name=STAFF_ALERT_JOB, max_tries=3, timeout=60),
     )
     on_startup = startup
     on_shutdown = shutdown

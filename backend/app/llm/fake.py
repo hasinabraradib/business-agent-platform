@@ -41,6 +41,12 @@ GREETING = re.compile(
 )
 
 
+# Asking for a person (English, Banglish, Bengali) or clearly upset: the offline model hands off.
+HANDOFF = re.compile(
+    r"\b(real person|human|agent|manager|someone (from|on) (the|your) team|talk to (a|some)one|"
+    r"manush|kono lok|kotha bolte|kotha bolbo|very (angry|upset)|worst|disgusting)\b|মানুষ|কারো সাথে",
+    re.IGNORECASE,
+)
 CUSTOMER_BLOCK = re.compile(r"<customer-message-(\w+)>\n(.*)\n</customer-message-\1>", re.S)
 
 
@@ -72,6 +78,8 @@ def offline_responder(request: ChatRequest, model: str) -> str | Scripted:
     if GREETING.match(text):
         return "[[smalltalk]]\nHello! How can I help you today?"
     offered = {tool.name for tool in request.tools}
+    if "request_human" in offered and HANDOFF.search(text):
+        return Scripted(tool_calls=[("request_human", {"reason": f"customer said: {text[:80]}"})])
     if "query_catalog" in offered and LIST_QUESTION.search(text):
         arguments: dict[str, Any] = {"limit": 10}
         if price := re.search(r"(\d[\d,]*)", text):

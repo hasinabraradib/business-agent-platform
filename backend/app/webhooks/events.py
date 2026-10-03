@@ -8,7 +8,7 @@ from typing import Any
 from app.models import WebhookDelivery, WebhookEndpoint
 from app.tenancy import TenantDB
 
-EVENT_TYPES = ("reservation.created", "lead.created")
+EVENT_TYPES = ("reservation.created", "lead.created", "handoff.requested", "handoff.resolved")
 
 
 async def record_event(db: TenantDB, event_type: str, data: dict[str, Any]) -> uuid.UUID | None:

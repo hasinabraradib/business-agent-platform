@@ -1,11 +1,20 @@
-import uuid
+"""Admin conversation endpoints: browse conversations and handle human handoffs."""
 
-from fastapi import APIRouter, HTTPException, Query, status
+import uuid
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth import AdminAuth, AuthContext
+from app.channels.outbound import StaffMessageSender, get_staff_message_sender
+from app.db import get_sessionmaker
+from app.handoff import add_staff_reply, end_handoff
+from app.ingestion.queue import JobQueue, get_job_queue
 from app.models import Conversation, Message
-from app.schemas import ConversationDetail, ConversationOut, MessageOut
+from app.schemas import MAX_CHAT_MESSAGE_CHARS, ConversationDetail, ConversationOut, MessageOut
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -23,10 +32,32 @@ async def _message_counts(auth: AuthContext, ids: list[uuid.UUID]) -> dict[uuid.
     return {row.conversation_id: row.n for row in rows}
 
 
+QueueDep = Annotated[JobQueue, Depends(get_job_queue)]
+SenderDep = Annotated[StaffMessageSender, Depends(get_staff_message_sender)]
+SessionmakerDep = Annotated[async_sessionmaker[AsyncSession], Depends(get_sessionmaker)]
+Status = Literal["ai", "waiting_human", "human", "resolved"]
+
+
+class StaffReplyIn(BaseModel):
+    text: str = Field(min_length=1, max_length=MAX_CHAT_MESSAGE_CHARS)
+
+
+class StaffReplyOut(BaseModel):
+    message: MessageOut
+    conversation: ConversationOut
+    delivered: bool  # reached the customer's channel (the widget fetches it itself)
+
+
 @router.get("", response_model=list[ConversationOut])
-async def list_conversations(auth: AdminAuth, limit: int = Query(50, ge=1, le=200)):
+async def list_conversations(
+    auth: AdminAuth, limit: int = Query(50, ge=1, le=200), status: Status | None = None
+):
+    """Newest first; ?status=waiting_human lists the customers waiting for a person."""
+    query = auth.db.select(Conversation)
+    if status is not None:
+        query = query.where(Conversation.status == status)
     conversations = await auth.db.scalars(
-        auth.db.select(Conversation).order_by(Conversation.updated_at.desc()).limit(limit)
+        query.order_by(Conversation.updated_at.desc()).limit(limit)
     )
     counts = await _message_counts(auth, [c.id for c in conversations])
     return [
@@ -50,3 +81,59 @@ async def get_conversation(conversation_id: uuid.UUID, auth: AdminAuth):
         message_count=len(messages),
         messages=[MessageOut.model_validate(m) for m in messages],
     )
+
+
+async def _conversation(auth: AuthContext, conversation_id: uuid.UUID) -> Conversation:
+    conversation = await auth.db.get(Conversation, conversation_id, for_update=True)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return conversation
+
+
+async def _out(auth: AuthContext, conversation: Conversation) -> ConversationOut:
+    counts = await _message_counts(auth, [conversation.id])
+    return ConversationOut.model_validate(conversation).model_copy(
+        update={"message_count": counts.get(conversation.id, 0)}
+    )
+
+
+@router.post("/{conversation_id}/messages", response_model=StaffReplyOut, status_code=201)
+async def post_staff_reply(
+    conversation_id: uuid.UUID,
+    body: StaffReplyIn,
+    auth: AdminAuth,
+    send: SenderDep,
+    sessionmaker: SessionmakerDep,
+):
+    """Reply as a team member. The assistant stays silent until the chat is handed back."""
+    conversation = await _conversation(auth, conversation_id)
+    via = {"via": "admin_api", "api_key_id": str(auth.api_key_id)}
+    message = await add_staff_reply(auth.db, conversation, body.text, via)
+    await auth.db.commit()
+    delivered = await send(sessionmaker, conversation, body.text)
+    return StaffReplyOut(
+        message=MessageOut.model_validate(message),
+        conversation=await _out(auth, conversation),
+        delivered=delivered,
+    )
+
+
+async def _end(auth: AuthContext, queue: JobQueue, conversation_id: uuid.UUID, new: str):
+    conversation = await _conversation(auth, conversation_id)
+    delivery = await end_handoff(auth.db, conversation, new)
+    await auth.db.commit()
+    if delivery is not None:
+        await queue.enqueue_webhook(auth.tenant_id, delivery)
+    return await _out(auth, conversation)
+
+
+@router.post("/{conversation_id}/hand-back", response_model=ConversationOut)
+async def hand_back(conversation_id: uuid.UUID, auth: AdminAuth, queue: QueueDep):
+    """The assistant answers this customer again."""
+    return await _end(auth, queue, conversation_id, "ai")
+
+
+@router.post("/{conversation_id}/resolve", response_model=ConversationOut)
+async def resolve(conversation_id: uuid.UUID, auth: AdminAuth, queue: QueueDep):
+    """Close the conversation; if the customer writes again, the assistant answers."""
+    return await _end(auth, queue, conversation_id, "resolved")

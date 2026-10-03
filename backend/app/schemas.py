@@ -132,7 +132,7 @@ class ChatResponseBody(BaseModel):
     conversation_id: uuid.UUID
     message_id: uuid.UUID | None
     reply: str
-    outcome: str
+    outcome: str | None  # None when silent
     citations: list[Citation]
     usage: dict[str, int]
     timings: dict[str, float]
@@ -140,6 +140,20 @@ class ChatResponseBody(BaseModel):
     model: str | None = None
     replayed: bool = False  # a retry of an already answered client_message_id
     error: str | None = None
+    # silent: a person is handling the conversation, so the assistant did not reply.
+    silent: bool = False
+    conversation_status: str = "ai"
+
+
+class StaffMessageOut(BaseModel):
+    id: uuid.UUID
+    content: str
+    created_at: datetime
+
+
+class ChatUpdates(BaseModel):
+    conversation_status: str
+    messages: list[StaffMessageOut]
 
 
 class ConversationOut(ORMModel):
@@ -147,6 +161,9 @@ class ConversationOut(ORMModel):
     channel: str
     visitor_id: str
     status: str
+    customer_name: str | None = None
+    handoff_reason: str | None = None
+    handoff_requested_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     message_count: int = 0

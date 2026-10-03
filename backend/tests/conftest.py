@@ -181,6 +181,7 @@ class RecordingQueue:
     def __init__(self) -> None:
         self.jobs: list[tuple[uuid.UUID, uuid.UUID]] = []
         self.webhooks: list[tuple[uuid.UUID, uuid.UUID, int]] = []
+        self.alerts: list[tuple[uuid.UUID, uuid.UUID, str]] = []
 
     async def enqueue_ingest(self, tenant_id: uuid.UUID, document_id: uuid.UUID) -> None:
         self.jobs.append((tenant_id, document_id))
@@ -189,6 +190,11 @@ class RecordingQueue:
         self, tenant_id: uuid.UUID, delivery_id: uuid.UUID, defer_seconds: int = 0
     ) -> None:
         self.webhooks.append((tenant_id, delivery_id, defer_seconds))
+
+    async def enqueue_staff_alert(
+        self, tenant_id: uuid.UUID, conversation_id: uuid.UUID, kind: str
+    ) -> None:
+        self.alerts.append((tenant_id, conversation_id, kind))
 
 
 @pytest.fixture(autouse=True)

@@ -176,9 +176,11 @@ def decide_outcome(
     action: bool = False,
     lookup: bool = False,
     proposed: bool = False,
+    handoff: bool = False,
 ) -> str:
     """The stored outcome, decided from what code can verify:
 
+    - handoff: the conversation was handed to a person this turn (request_human);
     - action: a write tool completed this turn (a reservation booked, a lead saved);
     - answered: the reply cites a source found in this conversation, or a record lookup (an
       order) succeeded this turn;
@@ -189,6 +191,8 @@ def decide_outcome(
       details read back for the customer to confirm (a write tool's proposal), which collects
       details rather than claiming an answer.
     """
+    if handoff:
+        return "handoff"
     if action:
         return "action"
     if cited or lookup:

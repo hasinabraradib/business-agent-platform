@@ -61,6 +61,7 @@ DEMO_TENANTS = [
                 "query_catalog",
                 "create_reservation",
                 "capture_lead",
+                "request_human",
             ],
             "opening_hours": {
                 **{day: [["12:00", "23:00"]] for day in ("sat", "sun", "mon", "tue", "wed", "thu")},
@@ -101,8 +102,18 @@ DEMO_TENANTS = [
             "greeting": "Hi! I'm Mithila. Ask me about our sarees, delivery or returns.",
             "accent_color": "#F2C14E",
             "timezone": "Asia/Dhaka",
-            "enabled_tools": ["search_knowledge", "query_catalog", "lookup_order", "capture_lead"],
+            "enabled_tools": [
+                "search_knowledge",
+                "query_catalog",
+                "lookup_order",
+                "capture_lead",
+                "request_human",
+            ],
             "follow_up_promise": "within one working day",
+            # Staff hours (the handoff acknowledgement says whether the team is online).
+            "opening_hours": {
+                day: [["10:00", "19:00"]] for day in ("sat", "sun", "mon", "tue", "wed", "thu")
+            },
             "suggested_questions": [
                 "How long does delivery take?",
                 "What is your return policy?",

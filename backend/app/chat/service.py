@@ -31,11 +31,13 @@ from app.chat.prompts import (
     history_user_block,
     mentions_contact,
     new_nonce,
+    reply_language,
     system_prompt,
     uses_bengali_script,
 )
 from app.chat.settings import TenantChatSettings
 from app.chat.tools import Source, ToolRegistry, TurnContext, location
+from app.handoff import acknowledgement
 from app.llm import (
     ChatChain,
     ChatError,
@@ -101,6 +103,7 @@ class DoneEvent:
     timings: dict[str, float]
     retrieval: dict[str, Any]
     model: str | None = None
+    conversation_status: str = "ai"  # waiting_human after a handoff
 
 
 @dataclass(frozen=True)
@@ -243,6 +246,8 @@ class ChatService:
                     messages.append(finish.assistant)
                     for call in calls:
                         messages.append(await self.tools.execute(context, call))
+                    if context.handoff:
+                        break  # the acknowledgement below is the whole reply
         except TimeoutError:
             error = "model timed out"
         except ChatError as exc:
@@ -258,6 +263,11 @@ class ChatService:
             return
 
         tail = citations.feed(plain.feed(tags.flush()) + plain.flush()) + citations.flush()
+        if context.handoff:
+            # Written by code from the tenant's settings, not by the model: it can't invent a
+            # reply time or office hours. Anything the model wrote first stays before it.
+            ack = acknowledgement(turn.settings, reply_language(turn.message), now)
+            tail = f"{tail}\n\n{ack}" if "".join(run.reply) or tail.strip() else ack
         if tail:
             if "first_token" not in run.timings:
                 run.timings["first_token"] = run.ms_since(run.started)
@@ -270,6 +280,7 @@ class ChatService:
             action=bool(context.actions),
             lookup=context.lookups > 0,
             proposed=any(r.status == "needs_confirmation" for r in context.records),
+            handoff=context.handoff,
         )
         contact = turn.settings.fallback_contact
         if outcome == "no_answer" and contact and not mentions_contact("".join(run.reply), contact):
@@ -301,6 +312,7 @@ class ChatService:
             timings=run.timings,
             retrieval=retrieval,
             model=run.model,
+            conversation_status="waiting_human" if context.handoff else "ai",
         )
 
     async def _model_events(self, request: ChatRequest, prefer: str | None):

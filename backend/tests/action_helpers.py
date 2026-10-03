@@ -12,6 +12,7 @@ from app.chat.actions import (
     CreateReservationTool,
     LookupOrderTool,
     QueryCatalogTool,
+    RequestHumanTool,
 )
 from app.chat.settings import TenantChatSettings
 from app.chat.tools import SearchKnowledgeTool, ToolRegistry, TurnContext
@@ -72,6 +73,7 @@ def registry() -> ToolRegistry:
             CreateReservationTool(),
             LookupOrderTool(),
             CaptureLeadTool(),
+            RequestHumanTool(),
         ]
     )
 

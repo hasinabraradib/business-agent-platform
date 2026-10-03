@@ -11,6 +11,7 @@ from app.config import get_settings
 
 INGEST_JOB = "ingest_document"
 WEBHOOK_JOB = "deliver_webhook"
+STAFF_ALERT_JOB = "send_staff_alert"
 
 
 class JobQueue(Protocol):
@@ -18,6 +19,10 @@ class JobQueue(Protocol):
 
     async def enqueue_webhook(
         self, tenant_id: uuid.UUID, delivery_id: uuid.UUID, defer_seconds: int = 0
+    ) -> None: ...
+
+    async def enqueue_staff_alert(
+        self, tenant_id: uuid.UUID, conversation_id: uuid.UUID, kind: str
     ) -> None: ...
 
 
@@ -47,6 +52,20 @@ class ArqJobQueue:
             str(delivery_id),
             _job_id=f"webhook:{delivery_id}:{uuid.uuid4().hex[:8]}",
             _defer_by=defer_seconds or None,
+        )
+
+    async def enqueue_staff_alert(
+        self, tenant_id: uuid.UUID, conversation_id: uuid.UUID, kind: str
+    ) -> None:
+        """kind: "handoff" (a person was asked for) or "message" (the customer wrote again)."""
+        if self._pool is None:
+            self._pool = await create_pool(self._settings)
+        await self._pool.enqueue_job(
+            STAFF_ALERT_JOB,
+            str(tenant_id),
+            str(conversation_id),
+            kind,
+            _job_id=f"alert:{conversation_id}:{uuid.uuid4().hex[:8]}",
         )
 
     async def aclose(self) -> None:

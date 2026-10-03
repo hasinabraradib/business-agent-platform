@@ -129,8 +129,9 @@ async def test_non_streaming_response_shape(client: AsyncClient, cafe) -> None:
     body = response.json()
     assert set(body) == {
         "conversation_id", "message_id", "reply", "outcome", "citations", "usage", "timings",
-        "retrieval", "model", "replayed", "error",
+        "retrieval", "model", "replayed", "error", "silent", "conversation_status",
     }  # fmt: skip
+    assert body["silent"] is False and body["conversation_status"] == "ai"
     assert body["reply"] == "dish: Kacchi Biryani [1]"
     assert body["outcome"] == "answered"
     assert body["error"] is None

@@ -5,6 +5,7 @@ from app.chat.actions import (
     CreateReservationTool,
     LookupOrderTool,
     QueryCatalogTool,
+    RequestHumanTool,
 )
 from app.chat.ratelimit import RateLimiter
 from app.chat.service import ChatConfig, ChatService
@@ -26,6 +27,7 @@ def get_chat_service() -> ChatService:
             CreateReservationTool(),
             LookupOrderTool(),
             CaptureLeadTool(),
+            RequestHumanTool(),
         ],
         max_searches=settings.chat_max_searches,
     )

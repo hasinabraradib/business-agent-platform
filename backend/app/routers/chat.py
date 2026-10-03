@@ -3,16 +3,16 @@
 import json
 import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlalchemy.exc import IntegrityError
 
 from app.auth import AuthContext, authenticate
+from app.channels.pipeline import AlreadyInFlight, ConversationNotFound, accept
 from app.chat.deps import get_chat_service, get_rate_limiter
 from app.chat.origins import check_origin, preflight
-from app.chat.prompts import HistoryTurn
 from app.chat.ratelimit import RateLimiter
 from app.chat.service import (
     ChatService,
@@ -24,14 +24,16 @@ from app.chat.service import (
 )
 from app.chat.settings import TenantChatSettings
 from app.config import get_settings
+from app.ingestion.queue import JobQueue, get_job_queue
 from app.models import Conversation, Message
-from app.schemas import ChatRequestBody, ChatResponseBody
+from app.schemas import ChatRequestBody, ChatResponseBody, ChatUpdates
 
 router = APIRouter(tags=["chat"])
 
 AnyKeyAuth = Annotated[AuthContext, Depends(authenticate)]
 ServiceDep = Annotated[ChatService, Depends(get_chat_service)]
 LimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
+QueueDep = Annotated[JobQueue, Depends(get_job_queue)]
 
 
 def _too_many(detail: str, retry_after: int) -> HTTPException:
@@ -76,89 +78,43 @@ async def chat(
     auth: AnyKeyAuth,
     service: ServiceDep,
     limiter: LimiterDep,
+    queue: QueueDep,
 ):
     tenant = await auth.db.tenant()
     settings = TenantChatSettings.from_tenant(tenant.name, tenant.settings)
     check_origin(request, auth, settings)
     await _check_limits(limiter, auth, body, settings)
 
-    existing = None
-    if body.client_message_id:
-        existing = await auth.db.scalar(
-            auth.db.select(Message).where(
-                Message.client_message_id == body.client_message_id, Message.role == "user"
-            )
-        )
-    if existing is not None:
-        # A retry of a message we already have: never store it twice.
-        conversation = await auth.db.get(Conversation, existing.conversation_id)
-        if conversation is None or conversation.visitor_id != body.visitor_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
-            )
-        answered = await auth.db.scalar(
-            auth.db.select(Message)
-            .where(Message.in_reply_to == existing.id)
-            .where(Message.outcome.is_distinct_from("error"))
-            .order_by(Message.created_at.desc())
-        )
-        if answered is not None:
-            return _replay(answered, conversation.id, body.stream)
-        user_message = existing
-    else:
-        if body.conversation_id is not None:
-            conversation = await auth.db.get(Conversation, body.conversation_id)
-            # Another visitor's conversation is reported exactly like a missing one.
-            if conversation is None or conversation.visitor_id != body.visitor_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
-                )
-        else:
-            conversation = Conversation(visitor_id=body.visitor_id, channel="web")
-            auth.db.add(conversation)
-            await auth.db.flush()
-        user_message = Message(
-            conversation_id=conversation.id,
-            role="user",
-            content=body.message,
+    try:
+        accepted = await accept(
+            auth.db,
+            settings=settings,
+            channel="web",
+            visitor_id=body.visitor_id,
+            text=body.message,
             client_message_id=body.client_message_id,
+            conversation_id=body.conversation_id,
+            history_messages=service.config.history_messages,
         )
-        auth.db.add(user_message)
-        try:
-            await auth.db.flush()
-        except IntegrityError:
-            # A concurrent retry with the same client_message_id won the race.
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This message is already being answered; please retry in a moment",
-            ) from None
-
-    earlier = await auth.db.scalars(
-        auth.db.select(Message)
-        .where(Message.conversation_id == conversation.id, Message.id != user_message.id)
-        .where(Message.created_at <= user_message.created_at)
-        .where(Message.outcome.is_distinct_from("error"))  # failed turns are not context
-        .order_by(Message.created_at.desc())
-        .limit(service.config.history_messages)
-    )
-    history = [HistoryTurn(m.role, m.content) for m in reversed(earlier)]
-    earlier_chunk_ids: list[uuid.UUID] = []
-    for message in [m for m in earlier if m.role == "assistant"][:2]:  # the two latest replies
-        for citation in message.citations or []:
-            chunk_id = uuid.UUID(str(citation["chunk_id"]))
-            if chunk_id not in earlier_chunk_ids and len(earlier_chunk_ids) < 8:
-                earlier_chunk_ids.append(chunk_id)
-    await auth.db.commit()
-
-    turn = ChatTurnInput(
-        tenant_id=auth.tenant_id,
-        conversation_id=conversation.id,
-        user_message_id=user_message.id,
-        message=user_message.content,
-        history=history,
-        settings=settings,
-        earlier_chunk_ids=earlier_chunk_ids,
-    )
+    except ConversationNotFound:
+        # Another visitor's conversation is reported exactly like a missing one.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found"
+        ) from None
+    except AlreadyInFlight:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This message is already being answered; please retry in a moment",
+        ) from None
+    if accepted.replay is not None:
+        return _replay(accepted.replay, accepted.conversation.id, body.stream)
+    if accepted.silent:
+        # A person is handling this conversation: no AI reply, enforced here, not in the prompt.
+        if accepted.new_message:
+            await queue.enqueue_staff_alert(auth.tenant_id, accepted.conversation.id, "message")
+        return _silent(accepted.conversation, body.stream)
+    turn = accepted.turn
+    assert turn is not None
     if body.stream:
         return StreamingResponse(
             _sse(service, turn),
@@ -166,6 +122,35 @@ async def chat(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     return await _collect(service, turn)
+
+
+def _silent(conversation: Conversation, stream: bool):
+    """The answer while a person handles the conversation: stored, nothing to say."""
+    done = {
+        "message_id": None,
+        "conversation_id": conversation.id,
+        "outcome": None,
+        "silent": True,
+        "conversation_status": conversation.status,
+    }
+    if stream:
+
+        async def events() -> AsyncIterator[str]:
+            yield _event("done", done)
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+    return ChatResponseBody(
+        conversation_id=conversation.id,
+        message_id=None,
+        reply="",
+        outcome=None,
+        citations=[],
+        usage={},
+        timings={},
+        retrieval=None,
+        silent=True,
+        conversation_status=conversation.status,
+    )
 
 
 def _replay(reply: Message, conversation_id: uuid.UUID, stream: bool):
@@ -224,6 +209,7 @@ async def _sse(service: ChatService, turn: ChatTurnInput) -> AsyncIterator[str]:
                     "outcome": event.outcome,
                     "usage": event.usage,
                     "timings": event.timings,
+                    "conversation_status": event.conversation_status,
                 },
             )
         elif isinstance(event, ErrorEvent):
@@ -253,6 +239,7 @@ async def _collect(service: ChatService, turn: ChatTurnInput) -> JSONResponse | 
                 timings=event.timings,
                 retrieval=event.retrieval,
                 model=event.model,
+                conversation_status=event.conversation_status,
             )
         elif isinstance(event, ErrorEvent):
             body = ChatResponseBody(
@@ -270,3 +257,42 @@ async def _collect(service: ChatService, turn: ChatTurnInput) -> JSONResponse | 
                 status_code=status.HTTP_502_BAD_GATEWAY, content=body.model_dump(mode="json")
             )
     raise RuntimeError("chat pipeline ended without a done or error event")  # pragma: no cover
+
+
+@router.options("/chat/updates", include_in_schema=False)
+async def updates_preflight(request: Request) -> Response:
+    return preflight(request, "GET, OPTIONS")
+
+
+@router.get("/chat/updates", response_model=ChatUpdates)
+async def chat_updates(
+    request: Request,
+    auth: AnyKeyAuth,
+    limiter: LimiterDep,
+    conversation_id: uuid.UUID,
+    visitor_id: Annotated[str, Query(min_length=1, max_length=128)],
+    after: datetime | None = None,
+) -> ChatUpdates:
+    """Team members' replies for the widget, which polls while a person handles the chat."""
+    tenant = await auth.db.tenant()
+    settings = TenantChatSettings.from_tenant(tenant.name, tenant.settings)
+    check_origin(request, auth, settings)
+    retry = await limiter.per_minute(
+        f"poll:{auth.tenant_id}:{visitor_id}", get_settings().chat_poll_per_visitor_per_minute
+    )
+    if retry:
+        raise _too_many("Checking for replies too often; please wait a moment", retry)
+    conversation = await auth.db.get(Conversation, conversation_id)
+    owned = conversation is not None and conversation.visitor_id == visitor_id
+    if not owned or conversation.channel != "web":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    query = auth.db.select(Message).where(
+        Message.conversation_id == conversation.id, Message.role == "staff"
+    )
+    if after is not None:
+        query = query.where(Message.created_at > after)
+    messages = await auth.db.scalars(query.order_by(Message.created_at).limit(50))
+    return ChatUpdates(
+        conversation_status=conversation.status,
+        messages=[{"id": m.id, "content": m.content, "created_at": m.created_at} for m in messages],
+    )

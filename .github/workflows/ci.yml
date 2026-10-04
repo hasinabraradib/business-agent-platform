@@ -64,7 +64,12 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Pytest
-        run: uv run pytest -v
+        run: uv run pytest -v --ignore=tests/test_eval_suite.py
+
+      # Offline providers only; writes a summary to the job page and fails below the floors
+      # in evals/config.json.
+      - name: Deterministic evaluation
+        run: uv run python -m evaluation deterministic
 
   widget:
     runs-on: ubuntu-latest

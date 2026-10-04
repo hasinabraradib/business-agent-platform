@@ -376,8 +376,9 @@ Customer messages, search results and earlier sources sit inside tags whose name
 per-turn nonce, and the prompt treats them as data, never as instructions.
 
 **Models, failover and latency.** `CHAT_MODELS` lists `provider:model` candidates in order. The
-default is `gemini-3.8-flash` (Google's default general-purpose model) with `gemini-3.6-flash` as
-fallback. Setting `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY` and `OPENAI_COMPAT_MODEL`
+default is `gemini-3.6-flash` with `gemini-3.8-flash` (Google's default general-purpose model) as
+fallback: in the live eval 3.6 gave its first event in 1.5–2.3 s, inside the 3 s failover window
+every time, while 3.8 took 2.7–13 s and was overloaded (503) in 2 of 5 calls. Setting `OPENAI_COMPAT_BASE_URL`, `OPENAI_COMPAT_API_KEY` and `OPENAI_COMPAT_MODEL`
 makes any OpenAI-compatible endpoint the **primary** model, with the `CHAT_MODELS` entries as
 its fallbacks (streaming and tool calls supported). The demo setup uses Groq with
 `openai/gpt-oss-120b` and `OPENAI_COMPAT_REASONING_EFFORT=low`. That is Groq's featured model,
@@ -406,6 +407,7 @@ runs against the live stack):
 | Groq `openai/gpt-oss-120b` (primary) | 2026-10-04 | 0.6–1.1 s / 0.65–1.6 s | 1.2–2.7 s / 1.3–3.1 s | Handoff turns 0.5–1.0 s: one model call, the acknowledgement is written by code |
 | Gemini only (`gemini-3.6-flash`) | 2026-10-04 | – | 5.6–6.8 s / 5.8–7.0 s | `gemini-3.8-flash` gave no first event within the 3 s failover window, so 3.6 answered |
 | Groq → Gemini mid tool loop (`gemini-3.8-flash`) | 2026-10-04 | – | 2.5 s / 2.5 s | Forced Groq failure after its tool call; Gemini continued, no thought-signature error |
+| Gemini time to first event, real prompt and tools (eval) | 2026-10-04 | 3.6 Flash: 1.5–2.3 s, 5/5 within 3 s | 3.8 Flash: 2.7–13 s, 1/3 within 3 s, 2 overload errors | Hence the fallback order since 2026-10-04: Groq → 3.6 Flash → 3.8 Flash (`CHAT_MODELS`) |
 
 Both targets (2.5 s direct, 4 s with a search) are met on Groq. Gemini alone is slower than the
 4 s target. The free tiers limit testing:

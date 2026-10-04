@@ -540,9 +540,10 @@ def test_chain_registry() -> None:
     assert fake.offline and fake.primary == "fake:fake-chat"
     assert get_chat_chain(_llm_settings(chat_provider="auto")).offline  # no keys configured
     gemini = get_chat_chain(_llm_settings(chat_provider="auto", gemini_api_key="k"))
+    # 3.6 first: it stayed inside the 3 s failover window in the live eval; 3.8 did not.
     assert [c.label for c in gemini.candidates] == [
-        "gemini:gemini-3.8-flash",
         "gemini:gemini-3.6-flash",
+        "gemini:gemini-3.8-flash",
     ]
     mixed = get_chat_chain(
         _llm_settings(
@@ -555,8 +556,8 @@ def test_chain_registry() -> None:
     )
     assert [c.label for c in mixed.candidates] == [
         "openai_compat:small",  # the OpenAI-compatible model is primary, Gemini the fallback
-        "gemini:gemini-3.8-flash",
         "gemini:gemini-3.6-flash",
+        "gemini:gemini-3.8-flash",
     ]
     assert not mixed.offline
     only_openai = get_chat_chain(

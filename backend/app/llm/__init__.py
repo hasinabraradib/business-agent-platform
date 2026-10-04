@@ -65,7 +65,9 @@ class LLMSettings(BaseSettings):
     # auto: the CHAT_MODELS chain (skipping providers without credentials), or the offline fake
     # model if none is usable. fake: always the offline model.
     chat_provider: str = "auto"
-    chat_models: str = "gemini:gemini-3.8-flash,gemini:gemini-3.6-flash"
+    # 3.6 before 3.8: in the 2026-10-04 eval, 3.6 gave its first event in 1.5-2.3 s (5 of 5
+    # within the 3 s failover window); 3.8 took 2.7-13 s and returned 503 twice in 5 calls.
+    chat_models: str = "gemini:gemini-3.6-flash,gemini:gemini-3.8-flash"
     chat_failover_seconds: float = 3.0
     chat_cooldown_seconds: float = 60.0
     gemini_api_key: str = ""

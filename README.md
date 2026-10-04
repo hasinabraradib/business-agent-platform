@@ -12,7 +12,7 @@ Requires Docker and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 cp .env.example .env          # placeholder values; edit if you like
-docker compose up --build     # postgres, redis, migrate (role + migrations), api, worker
+docker compose up --build     # postgres, redis, migrate (role + migrations), api, worker, dashboard
 curl localhost:8000/health    # {"status":"ok","database":"up"}
 
 # Demo tenants with ingested demo/ knowledge (prints keys once; store them)
@@ -31,6 +31,7 @@ curl -N -H "Authorization: Bearer bap_admin_..." -H 'content-type: application/j
 Set `GEMINI_API_KEY` in `.env` for real embeddings; without it the stack uses deterministic
 fake embeddings (fine for development, useless for search quality).
 
+The dashboard runs on http://localhost:3001: sign in with an admin key (see Dashboard below).
 API docs: http://localhost:8000/docs. If you have a database volume from before the app role
 existed, recreate it with `docker compose down -v`.
 
@@ -736,3 +737,100 @@ open http://localhost:8080/nodi-kitchen/   # and http://localhost:8080/jamdani-l
 To run everything offline (no Gemini calls), start the stack with
 `CHAT_PROVIDER=fake EMBEDDING_PROVIDER=fake RERANKER=noop` set in your shell or `.env`. Do this
 on a fresh database, so the demo knowledge is embedded with the fake model too.
+
+## Dashboard
+
+`web/dashboard/` is the web app for shop owners and staff: Next.js (App Router), TypeScript and
+Tailwind CSS. Compose runs it at http://localhost:3001. To sign in, paste an admin API key.
+
+```bash
+docker compose up -d --build
+docker compose run --rm migrate python -m app.cli seed-demo     # once; prints keys, store them
+docker compose run --rm migrate python -m app.cli create-key --tenant demo-restaurant --kind admin
+open http://localhost:3001
+```
+
+| | |
+|---|---|
+| ![Overview](docs/screenshots/02-overview.png) | ![Inbox](docs/screenshots/03-inbox.png) |
+| ![Conversation](docs/screenshots/04-conversation.png) | ![Run trace](docs/screenshots/05-run-trace.png) |
+| ![Knowledge](docs/screenshots/06-knowledge.png) | ![Knowledge gaps](docs/screenshots/07-knowledge-gaps.png) |
+| ![Bookings and leads](docs/screenshots/08-bookings-and-leads.png) | ![Settings](docs/screenshots/09-settings.png) |
+| ![Sign in](docs/screenshots/01-sign-in.png) | ![Inbox on a phone](docs/screenshots/10-inbox-phone.png) |
+
+(Screenshots come from the offline e2e stack, so the model is the fake one and every name and
+number is invented.)
+
+**Screens**
+- **Overview:** conversations today and over the last 7 days (in the business's timezone),
+  conversations per day, how replies ended, the handoff rate, the median time to first token,
+  tokens with an estimated cost, and the latest unanswered questions.
+- **Inbox:** filter by state (waiting for team, with team, assistant, resolved), search names
+  and messages, and see the channel and unread conversations at a glance. A conversation shows
+  each message with its role, source chips and the tools each assistant turn used. Staff can
+  reply (this pauses the assistant), hand back to the AI or mark it resolved. The page polls
+  every 10 seconds, but only while the tab is visible.
+- **Run trace** (from "View trace" on any assistant reply): the question, every search the model
+  wrote with its mode, its relevance decision and every chunk with its vector, keyword, fused
+  and rerank scores, the tool calls with arguments and results, the model, any failover, timings
+  and tokens.
+- **Knowledge:** documents with type, size, chunk count, status and last update. Drag and drop
+  (or choose) text, Markdown, CSV, PDF or HTML files with upload progress, add a web page by
+  URL, and delete with confirmation. Errors are in plain language.
+- **Knowledge gaps:** questions the assistant could not answer, grouped when they are alike,
+  newest first, with a count. "Add an answer" saves a short knowledge entry and closes the
+  group.
+- **Bookings & leads:** tables linked to their conversations, with CSV export.
+- **Settings:** business name, assistant name, contact line, reply-time promise, tone and notes;
+  weekly hours and timezone; handoff messages; enabled tools; allowed website origins; webhook
+  URL with a test event and the delivery log; Telegram bot token (write-only, never shown
+  again), staff chat id and a status check; API keys (create, list masked, revoke).
+
+**Sign-in and security**
+- The browser never holds the API key. `POST /api/session` checks the key against
+  `GET /v1/tenant` (widget keys are refused), seals it with AES-256-GCM using
+  `SESSION_SECRET`, and stores it in an httpOnly, SameSite=Lax cookie (Secure in production)
+  for 12 hours. Nothing goes in `localStorage`. Signing out deletes the cookie.
+- Browser code calls the dashboard's own `/api/v1/...` proxy. The proxy only forwards an
+  allowlist of method and path pairs (`src/lib/proxy.ts`), requires an `x-bap-dashboard` header
+  that a cross-site form cannot send, and adds the key on the server. The API's address is
+  `API_BASE_URL`, read only on the server.
+- Customer and model text is rendered as React text, never as HTML. CSV exports neutralise
+  spreadsheet formulas.
+- If `SESSION_SECRET` is empty, a random secret is made at start-up, so sessions end on each
+  restart. Set `DASHBOARD_SESSION_SECRET` in `.env` to keep them.
+
+**Design.** Colours, radii, spacing and shadows come from the widget's `src/tokens.ts`.
+`npm run tokens` regenerates `src/app/tokens.css`, and a unit test fails if that file is stale.
+The look: a near-black sidebar and text, a lime accent (`#C5EE4F`), large rounded cards, pill
+buttons and soft shadows. Customer bubbles are grey, assistant bubbles lime and team replies
+lavender. The theme is light only. Below the `lg` breakpoint the sidebar becomes a menu, and
+tables scroll inside their cards.
+
+**Develop and test** (Node 22.6+):
+
+```bash
+cd web/dashboard
+npm ci
+npm run check      # type-check, lint (oxlint), unit and component tests (Vitest), build
+API_BASE_URL=http://localhost:8000 npm run dev   # http://localhost:3001
+```
+
+End-to-end tests (Playwright, Chromium) run against a separate Compose project, `bap-e2e`.
+It uses its own ports and volumes and offline providers only (fake chat model, hashing
+embeddings, no keys), so it never touches your stack or calls a real model:
+
+```bash
+docker compose build api dashboard
+./scripts/e2e-stack.sh up                       # API :18000, dashboard :13001, demo tenants
+cd web/dashboard && npx playwright install chromium
+npx playwright test --project=e2e               # flows + axe accessibility checks
+npm run screenshots                             # refresh docs/screenshots/
+cd ../.. && ./scripts/e2e-stack.sh down         # removes the e2e containers and volumes
+```
+
+The flows cover signing in (and a wrong key), seeing a conversation, replying as staff and
+handing back, opening a run trace, uploading a document until it is ready, closing a knowledge
+gap, changing a setting and signing out. axe checks every screen (no violations allowed), and
+a keyboard test covers the skip link and visible focus. The tests create the data they change,
+so they can run again on the same stack. CI runs both the dashboard checks and these e2e tests.

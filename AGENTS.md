@@ -8,7 +8,8 @@ Conventions for coding sessions (human or AI) working in this repository.
 - Ingestion: arq worker on Redis, pypdf, BeautifulSoup, httpx; embeddings from an API (Gemini)
 - Data: PostgreSQL 16 with pgvector, Redis 7
 - Tooling: uv (dependencies, `backend/uv.lock`), Ruff (lint + format), pytest + httpx
-- Frontend (later): Next.js + TypeScript in `web/`
+- Frontend: Next.js (App Router) + TypeScript + Tailwind dashboard in `web/dashboard/`; the
+  widget in `web/widget/` (TypeScript, no framework)
 - Local run: Docker Compose; CI: GitHub Actions (`.github/workflows/ci.yml`)
 
 ## Layout
@@ -41,6 +42,12 @@ backend/tests/        pytest suite (conftest.py sets up the test database)
 web/widget/           embeddable chat widget (TypeScript, esbuild, no UI framework)
   src/tokens.ts       design tokens: the single source for colours, radii, spacing, shadows
 web/demo/             two static demo sites embedding the widget (served on :8080)
+web/dashboard/        owner/staff dashboard (Next.js, served on :3001)
+  src/lib/session.ts  sealed httpOnly session cookie holding the admin key (server only)
+  src/lib/proxy.ts    allowlist + CSRF header for the /api/v1/[...path] proxy to the API
+  src/app/tokens.css  generated from web/widget/src/tokens.ts (`npm run tokens`)
+  e2e/                Playwright flows, axe checks, README screenshots (against bap-e2e)
+scripts/e2e-stack.sh  offline e2e Compose project `bap-e2e` (own ports/volumes, fake providers)
 scripts/demo-setup.sh builds the widget and writes the git-ignored demo page config
 backend/evaluation/   evaluation suite: retrieval metrics, groundedness, spelling, chat cases,
                       resumable live runner, report (`python -m evaluation ...`)
@@ -65,6 +72,8 @@ uv run arq app.worker.WorkerSettings   # run the ingestion worker outside Docker
 docker compose run --rm migrate python -m app.cli seed-demo   # repo root, inside Compose
 cd web/widget && npm ci && npm run check   # widget: types, lint, tests, build + gzip budget
 ./scripts/demo-setup.sh                 # repo root: widget build + demo page config
+cd web/dashboard && npm ci && npm run check   # dashboard: types, lint, Vitest, build
+./scripts/e2e-stack.sh up && (cd web/dashboard && npx playwright test --project=e2e)  # repo root
 ```
 
 ## Database roles
@@ -143,8 +152,18 @@ cd web/widget && npm ci && npm run check   # widget: types, lint, tests, build +
 - Widget: never use `innerHTML`/`insertAdjacentHTML`; build DOM with `createElement` and
   `textContent` (`src/render.ts` for any server or model text, http/https links only). Colours,
   radii, spacing, shadows and motion come from `src/tokens.ts`, never hard-coded in styles. Keep
-  `widget.js` under its gzip budget (enforced by `npm run build`). No browser end-to-end
-  framework in the repo: test with `node --test` and happy-dom.
+  `widget.js` under its gzip budget (enforced by `npm run build`). Test the widget with
+  `node --test` and happy-dom (Playwright is for the dashboard only).
+- Dashboard: the admin key never reaches browser JS or storage; it lives sealed in the httpOnly
+  session cookie and is added by the server-side proxy. A new API call from the browser needs
+  an entry in `src/lib/proxy.ts` RULES (with a test in `tests/proxy.test.ts`); server
+  components call `api()` from `src/lib/server.ts`. Render customer and model text as React
+  text, never `dangerouslySetInnerHTML`. Colours, radii, spacing and shadows come from the
+  generated `tokens.css` (edit `web/widget/src/tokens.ts`, then `npm run tokens`). Every
+  screen has loading, empty and error states and passes axe in `e2e/a11y.spec.ts`. E2E tests
+  run only against `scripts/e2e-stack.sh` (offline providers), create the data they change,
+  and clean up documents they add, so they can rerun on the same stack. Screenshots must show
+  only invented demo data and never a full key.
 - Never commit widget keys: demo pages read the git-ignored `web/demo/config.local.js`.
 - New embedding providers go in `app/embeddings/` only (subclass + registry entry); vectors must
   be `EMBEDDING_DIMENSIONS` long, and each chunk records its `embedding_model`.

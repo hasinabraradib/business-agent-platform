@@ -1,0 +1,51 @@
+{
+  "deterministic": {
+    "_comment": "CI gates (offline embeddings, fake chat model). Regression floors set a little below the measured values; raise them when the system improves.",
+    "min_recall_at_5": {
+      "vector": 0.88,
+      "keyword": 0.78,
+      "hybrid": 0.87,
+      "hybrid_rerank": 0.87
+    },
+    "min_groundedness": 1.0,
+    "max_safety_failures": 0,
+    "_measured": "2026-10-04, hashing embeddings: recall@5 vector 0.91, keyword 0.81, hybrid 0.90, hybrid_rerank 0.90; groundedness 27/27; safety 17/17"
+  },
+  "live": {
+    "tokens_per_request": 2600,
+    "requests_per_turn": 1.6,
+    "max_cases_per_run": 25,
+    "run_token_budget": 60000,
+    "daily_token_budget": 150000,
+    "pause_seconds": 60,
+    "expected_model_prefix": "openai_compat:",
+    "relevance_threshold_in_use": 0.65,
+    "first_token_target_s": 4.0,
+    "failover_window_s": 3.0,
+    "gemini_latency_samples": 5,
+    "_requests_per_turn_source": "measured 2026-10-04: 2.0 per turn on the shop actions, 1.3 on the handoff checks"
+  },
+  "prices_usd_per_million_tokens": {
+    "_source": "console.groq.com/docs/models and ai.google.dev/gemini-api/docs/pricing, checked 2026-10-04",
+    "openai_compat:openai/gpt-oss-120b": {
+      "input": 0.15,
+      "output": 0.6
+    },
+    "gemini:gemini-3.8-flash": {
+      "input": 0.75,
+      "output": 3.75
+    },
+    "gemini:gemini-3.6-flash": {
+      "input": 0.75,
+      "output": 3.75
+    },
+    "gemini-3.5-flash-lite (reranker)": {
+      "input": 0.3,
+      "output": 2.5
+    },
+    "gemini-embedding-2": {
+      "input": 0.2,
+      "output": 0.0
+    }
+  }
+}

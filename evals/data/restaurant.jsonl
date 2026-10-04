@@ -1,0 +1,50 @@
+{"id": "r01", "question": "What time do you open on Fridays?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Opening hours"]}
+{"id": "r02", "question": "When does the kitchen take its last orders?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Opening hours"]}
+{"id": "r03", "question": "What are your hours during Ramadan?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Opening hours"]}
+{"id": "r04", "question": "Where is the restaurant?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Location and parking"]}
+{"id": "r05", "question": "Is there parking near the restaurant?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Location and parking"]}
+{"id": "r06", "question": "Do you have a lift? My mother can't take stairs.", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Location and parking"]}
+{"id": "r07", "question": "How do I book a table?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Reservations"]}
+{"id": "r08", "question": "How long do you hold a reservation if we're late?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Reservations"]}
+{"id": "r09", "question": "Do we need to pay a deposit for a group of 10?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Reservations"]}
+{"id": "r10", "question": "Is your meat halal?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Is the food halal?"]}
+{"id": "r11", "question": "Do you serve alcohol?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Is the food halal?"]}
+{"id": "r12", "question": "How much does delivery cost?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Do you deliver?"]}
+{"id": "r13", "question": "Can I pay with bKash?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#How can I pay?"]}
+{"id": "r14", "question": "Is there a service charge or VAT on the bill?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#How can I pay?"]}
+{"id": "r15", "question": "Can the Beef Kala Bhuna be made mild?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Can you adjust the spice level?"]}
+{"id": "r16", "question": "Do you have a kids' portion?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Do you have food for children and vegetarians?"]}
+{"id": "r17", "question": "Do you have high chairs?", "language": "en", "style": "plain", "answerable": true, "expected": ["about.md#Do you have food for children and vegetarians?"]}
+{"id": "r18", "question": "How much is the Kacchi Biryani?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row1"]}
+{"id": "r19", "question": "What's in the Chingri Malai Curry?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row5"]}
+{"id": "r20", "question": "Is the Shorshe Ilish spicy?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row4", "about.md#Can you adjust the spice level?"]}
+{"id": "r21", "question": "Does the Morog Polao contain nuts?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row2"]}
+{"id": "r22", "question": "Which drink goes well with biryani?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row14"]}
+{"id": "r23", "question": "What's the price of a mango lassi?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row16"]}
+{"id": "r24", "question": "What is Mishti Doi?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row17"]}
+{"id": "r25", "question": "How much is one paratha?", "language": "en", "style": "plain", "answerable": true, "expected": ["menu.csv#row13"]}
+{"id": "r26", "question": "wat time u close tonite", "language": "en", "style": "typo", "answerable": true, "expected": ["about.md#Opening hours"]}
+{"id": "r27", "question": "do u deliever?", "language": "en", "style": "typo", "answerable": true, "expected": ["about.md#Do you deliver?"]}
+{"id": "r28", "question": "kachi biriyani price", "language": "en", "style": "typo", "answerable": true, "expected": ["menu.csv#row1"]}
+{"id": "r29", "question": "is the fud halal", "language": "en", "style": "typo", "answerable": true, "expected": ["about.md#Is the food halal?"]}
+{"id": "r30", "question": "parkng availble?", "language": "en", "style": "typo", "answerable": true, "expected": ["about.md#Location and parking"]}
+{"id": "r31", "question": "apnara ki friday te khola?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["about.md#Opening hours"]}
+{"id": "r32", "question": "kacchi biryani koto taka?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["menu.csv#row1"]}
+{"id": "r33", "question": "home delivery den?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["about.md#Do you deliver?"]}
+{"id": "r34", "question": "bkash e payment kora jabe?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["about.md#How can I pay?"]}
+{"id": "r35", "question": "table book korbo kivabe?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["about.md#Reservations"]}
+{"id": "r36", "question": "shorshe ilish e ki kata ache?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["menu.csv#row4"]}
+{"id": "r37", "question": "birthday party er jonno alada room ache?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["about.md#জন্মদিন বা অনুষ্ঠানের জন্য কি জায়গা পাওয়া যায়?"]}
+{"id": "r38", "question": "শুক্রবার আপনারা কখন খোলেন?", "language": "bn", "style": "plain", "answerable": true, "expected": ["about.md#Opening hours"]}
+{"id": "r39", "question": "কাচ্চি বিরিয়ানির দাম কত?", "language": "bn", "style": "plain", "answerable": true, "expected": ["menu.csv#row1"]}
+{"id": "r40", "question": "খাবার কি পার্সেল করে নেওয়া যাবে?", "language": "bn", "style": "plain", "answerable": true, "expected": ["about.md#খাবার কি বাসায় নেওয়া যাবে?"]}
+{"id": "r41", "question": "জন্মদিনের অনুষ্ঠানে কতজন বসতে পারবে?", "language": "bn", "style": "plain", "answerable": true, "expected": ["about.md#জন্মদিন বা অনুষ্ঠানের জন্য কি জায়গা পাওয়া যায়?"]}
+{"id": "r42", "question": "আপনাদের রেস্টুরেন্ট কোথায়?", "language": "bn", "style": "plain", "answerable": true, "expected": ["about.md#Location and parking"]}
+{"id": "r43", "question": "ফিরনিতে কি বাদাম আছে?", "language": "bn", "style": "plain", "answerable": true, "expected": ["menu.csv#row18"]}
+{"id": "r44", "question": "What's the weather in Dhaka today?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "r45", "question": "How much is the Mutton Rogan Josh?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "r46", "question": "What is Jamdani Lane's return policy?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "r47", "question": "What's the wifi password?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "r48", "question": "apnader kono branch Chittagong e ache?", "language": "banglish", "style": "plain", "answerable": false, "expected": []}
+{"id": "r49", "question": "পিজ্জা পাওয়া যায়?", "language": "bn", "style": "plain", "answerable": false, "expected": []}
+{"id": "r50", "question": "Who won the cricket match yesterday?", "language": "en", "style": "plain", "answerable": false, "expected": []}

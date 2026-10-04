@@ -5,6 +5,8 @@
 
 # Local uploaded files
 data/
+# ...but the evaluation question sets are source files
+!evals/data/
 
 # Python
 __pycache__/

@@ -1,0 +1,50 @@
+{"id": "s01", "question": "Are your sarees really handmade?", "language": "en", "style": "plain", "answerable": true, "expected": ["faq.md#Are your products really handmade?"]}
+{"id": "s02", "question": "How should I wash a jamdani saree?", "language": "en", "style": "plain", "answerable": true, "expected": ["faq.md#How do I care for a jamdani saree?"]}
+{"id": "s03", "question": "Which panjabi size fits a 42 inch chest?", "language": "en", "style": "plain", "answerable": true, "expected": ["faq.md#Do you have a size guide for panjabis?"]}
+{"id": "s04", "question": "Can I visit your studio in person?", "language": "en", "style": "plain", "answerable": true, "expected": ["faq.md#Can I visit your studio?"]}
+{"id": "s05", "question": "Do you take corporate gift orders for Eid?", "language": "en", "style": "plain", "answerable": true, "expected": ["faq.md#Do you take bulk or corporate orders?"]}
+{"id": "s06", "question": "What's your WhatsApp number?", "language": "en", "style": "plain", "answerable": true, "expected": ["faq.md#How can I contact you?"]}
+{"id": "s07", "question": "How many days do I have to return an item?", "language": "en", "style": "plain", "answerable": true, "expected": ["returns.md#Returns and refunds"]}
+{"id": "s08", "question": "Can I return a saree after the fall has been attached?", "language": "en", "style": "plain", "answerable": true, "expected": ["returns.md#What can be returned"]}
+{"id": "s09", "question": "My parcel arrived damaged. What should I do?", "language": "en", "style": "plain", "answerable": true, "expected": ["returns.md#Damaged or wrong items"]}
+{"id": "s10", "question": "How long does a refund take?", "language": "en", "style": "plain", "answerable": true, "expected": ["returns.md#How refunds work"]}
+{"id": "s11", "question": "Can I exchange an item for a different colour?", "language": "en", "style": "plain", "answerable": true, "expected": ["returns.md#Exchanges"]}
+{"id": "s12", "question": "How long does delivery take inside Dhaka?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#Delivery times and charges"]}
+{"id": "s13", "question": "How much is shipping to Chittagong?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#Delivery times and charges"]}
+{"id": "s14", "question": "Is shipping free above a certain amount?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#Delivery times and charges"]}
+{"id": "s15", "question": "Which courier do you use?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#Couriers and tracking"]}
+{"id": "s16", "question": "Do you ship to the UK?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#International shipping"]}
+{"id": "s17", "question": "Who pays customs duty on international orders?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#International shipping"]}
+{"id": "s18", "question": "Can I pay cash on delivery for a 20,000 taka order?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#Cash on delivery"]}
+{"id": "s19", "question": "How much is the Half-silk Jamdani Saree?", "language": "en", "style": "plain", "answerable": true, "expected": ["products.csv#row2"]}
+{"id": "s20", "question": "What colours does the Khadi Panjabi come in?", "language": "en", "style": "plain", "answerable": true, "expected": ["products.csv#row12"]}
+{"id": "s21", "question": "How big is the Nakshi Kantha Throw?", "language": "en", "style": "plain", "answerable": true, "expected": ["products.csv#row5"]}
+{"id": "s22", "question": "Does the jute tote bag have a pocket?", "language": "en", "style": "plain", "answerable": true, "expected": ["products.csv#row7"]}
+{"id": "s23", "question": "Will a 15 inch laptop fit the jute laptop sleeve?", "language": "en", "style": "plain", "answerable": true, "expected": ["products.csv#row8"]}
+{"id": "s24", "question": "Is the Rajshahi silk saree in stock?", "language": "en", "style": "plain", "answerable": true, "expected": ["products.csv#row4"]}
+{"id": "s25", "question": "What's in the Kantha & Tea gift box?", "language": "en", "style": "plain", "answerable": true, "expected": ["products.csv#row14"]}
+{"id": "s26", "question": "If I order in the morning, when is it packed?", "language": "en", "style": "plain", "answerable": true, "expected": ["shipping.md#Shipping"]}
+{"id": "s27", "question": "retrun polcy?", "language": "en", "style": "typo", "answerable": true, "expected": ["returns.md#Returns and refunds", "returns.md#What can be returned"]}
+{"id": "s28", "question": "how long dellivery to sylhet", "language": "en", "style": "typo", "answerable": true, "expected": ["shipping.md#Delivery times and charges"]}
+{"id": "s29", "question": "jamdani sharee price", "language": "en", "style": "typo", "answerable": true, "expected": ["products.csv#row1", "products.csv#row2"]}
+{"id": "s30", "question": "do u ship internationaly", "language": "en", "style": "typo", "answerable": true, "expected": ["shipping.md#International shipping"]}
+{"id": "s31", "question": "terracota tea set price", "language": "en", "style": "typo", "answerable": true, "expected": ["products.csv#row10"]}
+{"id": "s32", "question": "jamdani saree ache?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["products.csv#row1", "products.csv#row2"]}
+{"id": "s33", "question": "return policy ki?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["returns.md#Returns and refunds", "returns.md#What can be returned"]}
+{"id": "s34", "question": "Dhakar baire delivery koto din lage?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["shipping.md#Delivery times and charges"]}
+{"id": "s35", "question": "cash on delivery den?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["shipping.md#Cash on delivery", "faq.md#আপনারা কি ঢাকার বাইরে ক্যাশ অন ডেলিভারি দেন?"]}
+{"id": "s36", "question": "studio te ashte pari?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["faq.md#Can I visit your studio?"]}
+{"id": "s37", "question": "refund koto din e pabo?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["returns.md#How refunds work"]}
+{"id": "s38", "question": "gamcha return kora jabe?", "language": "banglish", "style": "plain", "answerable": true, "expected": ["returns.md#What can be returned"]}
+{"id": "s39", "question": "আপনারা কি ঢাকার বাইরে ক্যাশ অন ডেলিভারি দেন?", "language": "bn", "style": "plain", "answerable": true, "expected": ["faq.md#আপনারা কি ঢাকার বাইরে ক্যাশ অন ডেলিভারি দেন?", "shipping.md#Cash on delivery"]}
+{"id": "s40", "question": "জামদানি শাড়ি কীভাবে ধোব?", "language": "bn", "style": "plain", "answerable": true, "expected": ["faq.md#How do I care for a jamdani saree?"]}
+{"id": "s41", "question": "ঢাকার ভেতরে ডেলিভারি চার্জ কত?", "language": "bn", "style": "plain", "answerable": true, "expected": ["shipping.md#Delivery times and charges"]}
+{"id": "s42", "question": "রিফান্ড পেতে কত দিন লাগে?", "language": "bn", "style": "plain", "answerable": true, "expected": ["returns.md#How refunds work"]}
+{"id": "s43", "question": "পাঞ্জাবির সাইজ চার্ট আছে?", "language": "bn", "style": "plain", "answerable": true, "expected": ["faq.md#Do you have a size guide for panjabis?"]}
+{"id": "s44", "question": "What's the weather in Sylhet?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "s45", "question": "Do you sell leather wallets?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "s46", "question": "What time does Nodi Kitchen open?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "s47", "question": "Do you have a shop in Kolkata?", "language": "en", "style": "plain", "answerable": false, "expected": []}
+{"id": "s48", "question": "apnader kono discount code ache?", "language": "banglish", "style": "plain", "answerable": false, "expected": []}
+{"id": "s49", "question": "আপনারা কি গহনা বিক্রি করেন?", "language": "bn", "style": "plain", "answerable": false, "expected": []}
+{"id": "s50", "question": "Can I pay with PayPal?", "language": "en", "style": "plain", "answerable": false, "expected": []}

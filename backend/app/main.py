@@ -11,6 +11,7 @@ from app.routers import (
     api_keys,
     chat,
     conversations,
+    dashboard,
     documents,
     health,
     search,
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     v1.include_router(widget.config_router)
     v1.include_router(actions.router)
     v1.include_router(telegram.router)
+    v1.include_router(dashboard.router)
     app.include_router(v1)
 
     @app.middleware("http")

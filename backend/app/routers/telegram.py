@@ -338,3 +338,44 @@ async def register_webhook(body: RegisterWebhookIn, auth: AdminAuth) -> Register
     channel.webhook_secret_hash = _hash(secret)
     await auth.db.commit()
     return RegisterWebhookOut(webhook_url=url)
+
+
+class TelegramStatusOut(BaseModel):
+    configured: bool
+    bot_ok: bool = False
+    bot_username: str | None = None
+    webhook_url: str | None = None
+    webhook_registered: bool = False
+    pending_updates: int | None = None
+    last_error: str | None = None
+    staff_chat_id: int | None = None
+
+
+@router.get("/status", response_model=TelegramStatusOut)
+async def telegram_status(auth: AdminAuth) -> TelegramStatusOut:
+    """Ask Telegram whether the bot token works and where its webhook points (getMe,
+    getWebhookInfo). The token itself is never returned."""
+    channel = await load_channel(auth.db)
+    if channel is None:
+        return TelegramStatusOut(configured=False)
+    client = make_client(bot_token(channel))
+    try:
+        me = await client.get_me()
+        info = await client.get_webhook_info()
+    except TelegramError as exc:
+        return TelegramStatusOut(configured=True, last_error=str(exc),
+                                 staff_chat_id=channel.staff_chat_id)  # fmt: skip
+    finally:
+        await client.aclose()
+    info = info if isinstance(info, dict) else {}
+    url = info.get("url") or None
+    return TelegramStatusOut(
+        configured=True,
+        bot_ok=True,
+        bot_username=me.get("username"),
+        webhook_url=url,
+        webhook_registered=bool(url) and channel.webhook_secret_hash is not None,
+        pending_updates=info.get("pending_update_count"),
+        last_error=info.get("last_error_message"),
+        staff_chat_id=channel.staff_chat_id,
+    )

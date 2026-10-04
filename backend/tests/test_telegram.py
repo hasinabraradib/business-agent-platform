@@ -46,6 +46,15 @@ class FakeTelegram:
             return httpx.Response(
                 200, json={"ok": True, "result": {"id": 1, "username": "cafe_bot"}}
             )
+        if method == "getWebhookInfo":
+            url = (
+                "https://bap.example/hook"
+                if any(m == "setWebhook" for _, m, _ in self.calls)
+                else ""
+            )
+            return httpx.Response(
+                200, json={"ok": True, "result": {"url": url, "pending_update_count": 0}}
+            )
         if method == "sendMessage":
             self.next_message_id += 1
             return httpx.Response(

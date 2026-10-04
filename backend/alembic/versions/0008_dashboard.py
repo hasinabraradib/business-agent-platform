@@ -8,7 +8,8 @@ Columns on existing tenant-owned tables only (their RLS policies already cover t
 - documents.size_bytes: the uploaded or fetched size, for the knowledge list.
 - conversations.staff_read_at: when staff last opened the conversation (unread markers).
 - messages.gap_closed_at: a no_answer reply whose question was answered from the knowledge-gaps
-  screen, so it leaves the gaps list.
+  screen, so it leaves the gaps list. The application role may update this column only
+  (messages are otherwise insert-only for it).
 """
 
 from collections.abc import Sequence
@@ -27,6 +28,7 @@ def upgrade() -> None:
     op.add_column("documents", sa.Column("size_bytes", sa.Integer()))
     op.add_column("conversations", sa.Column("staff_read_at", sa.DateTime(timezone=True)))
     op.add_column("messages", sa.Column("gap_closed_at", sa.DateTime(timezone=True)))
+    op.execute("GRANT UPDATE (gap_closed_at) ON messages TO bap_app")
     op.create_index(
         "ix_messages_tenant_open_gaps",
         "messages",
@@ -37,6 +39,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_messages_tenant_open_gaps", "messages")
+    op.execute("REVOKE UPDATE (gap_closed_at) ON messages FROM bap_app")
     op.drop_column("messages", "gap_closed_at")
     op.drop_column("conversations", "staff_read_at")
     op.drop_column("documents", "size_bytes")

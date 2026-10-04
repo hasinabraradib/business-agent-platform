@@ -66,6 +66,9 @@ class TelegramClient:
             {"url": url, "secret_token": secret_token, "allowed_updates": ["message"]},
         )
 
+    async def get_webhook_info(self) -> dict[str, Any]:
+        return await self._call("getWebhookInfo", {})
+
     async def send_message(self, chat_id: int, text: str) -> list[int]:
         """Send plain text (never parse_mode), split to fit; returns the message ids."""
         ids = []

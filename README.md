@@ -263,24 +263,22 @@ vectors from different models are not comparable.
   A searching reply needs two model calls plus one search, so the query embedding (cached per
   tenant and question in Redis) and the model's own first-token time dominate.
 
-Measured so far:
-- **Pipeline overhead, offline** (fake model and embeddings, measured from the start of the turn
-  to the first token): about 0.1 ms for a direct reply, and 3 ms (max 5 ms) for a reply that
-  searches. Real latency is therefore almost entirely the model's time plus the query-embedding
-  call.
-- **Real Gemini, 2026-10-03 (chat quality):** blocked. `gemini-3.8-flash` was overloaded (503) and the free-tier
-  daily quota of `gemini-3.6-flash` (20 requests) was exhausted. The failover itself worked
-  (503 → fallback in milliseconds → clean apology in 1.8 s), but no answer timings could be
-  measured. Re-run `evals/chat_script.py` once quota is available.
-- **Groq `openai/gpt-oss-120b`, 2026-10-03** (`evals/chat_script.py`, both suites, all on the
-  primary model): time to first token 0.4 to 0.9 s for direct replies and 1.4 to 2.5 s for
-  replies that search or query the catalogue; totals within 0.1 s of first token. Both targets
-  are met. The free tier allows 8,000 tokens a minute (about one searching turn a minute) and
-  200,000 tokens a day (about 25 to 30 searching turns); the daily token limit ended
-  the run before the last shop turns of the final pass.
-- **Real Gemini, 2026-10-03 (action tools):** blocked. Both models returned the free-tier daily
-  quota error (429, 20 requests a day per model) on the first message. Run
-  `evals/chat_script.py --suite actions` once quota is available.
+Measured so far (time to first token / total, from `evals/chat_script.py` and verification
+runs against the live stack):
+
+| Setup | Date | Direct reply | Reply with a search or catalogue query | Notes |
+|---|---|---|---|---|
+| Offline pipeline (fake model and embeddings) | – | 0.1 ms overhead | 3 ms overhead (max 5 ms) | Real latency is the model plus the query embedding |
+| Groq `openai/gpt-oss-120b` (primary) | 2026-10-03 | 0.4–0.9 s | 1.4–2.5 s | Totals within 0.1 s of first token |
+| Groq `openai/gpt-oss-120b` (primary) | 2026-10-04 | 0.6–1.1 s / 0.65–1.6 s | 1.2–2.7 s / 1.3–3.1 s | Handoff turns 0.5–1.0 s: one model call, the acknowledgement is written by code |
+| Gemini only (`gemini-3.6-flash`) | 2026-10-04 | – | 5.6–6.8 s / 5.8–7.0 s | `gemini-3.8-flash` gave no first event within the 3 s failover window, so 3.6 answered |
+| Groq → Gemini mid tool loop (`gemini-3.8-flash`) | 2026-10-04 | – | 2.5 s / 2.5 s | Forced Groq failure after its tool call; Gemini continued, no thought-signature error |
+
+Both targets (2.5 s direct, 4 s with a search) are met on Groq. Gemini alone is slower than the
+4 s target. The free tiers limit testing:
+- **Groq:** 8,000 tokens a minute (about one searching turn a minute) and 200,000 tokens a day
+  (about 25 to 30 searching turns).
+- **Gemini:** 20 requests a day per model.
 
 **Protections for the public endpoint** (widget keys are visible in websites):
 - **Allowed origins:** widget requests must come from one of the tenant's `allowed_origins`.

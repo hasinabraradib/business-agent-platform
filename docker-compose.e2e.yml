@@ -1,0 +1,23 @@
+# End-to-end tests and screenshots: offline providers only (fake chat model, hashing
+# embeddings, no keys), used with `-p bap-e2e` so it never touches the main stack or its data.
+# See scripts/e2e-stack.sh.
+x-offline: &offline
+  CHAT_PROVIDER: fake
+  EMBEDDING_PROVIDER: fake
+  RERANKER: noop
+  GEMINI_API_KEY: ""
+  OPENAI_COMPAT_BASE_URL: ""
+  OPENAI_COMPAT_API_KEY: ""
+  OPENAI_COMPAT_MODEL: ""
+
+services:
+  migrate:
+    environment: *offline
+  api:
+    environment: *offline
+  worker:
+    environment: *offline
+  dashboard:
+    environment:
+      SESSION_SECRET: e2e-only-session-secret-not-used-anywhere-else-0123456789
+      COOKIE_SECURE: "false"

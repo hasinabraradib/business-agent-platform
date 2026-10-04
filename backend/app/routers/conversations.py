@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.auth import AdminAuth, AuthContext
@@ -48,22 +48,86 @@ class StaffReplyOut(BaseModel):
     delivered: bool  # reached the customer's channel (the widget fetches it itself)
 
 
+PREVIEW_CHARS = 140
+
+
+async def _summaries(auth: AuthContext, ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
+    """The newest message of each conversation and its newest customer message."""
+    if not ids:
+        return {}
+    rows = await auth.db.execute_sql(
+        text(
+            "SELECT DISTINCT ON (conversation_id) conversation_id, role, content, created_at "
+            "FROM messages WHERE tenant_id = :tenant_id AND conversation_id = ANY(:ids) "
+            "ORDER BY conversation_id, created_at DESC, role DESC"
+        ),
+        {"ids": ids},
+    )
+    last = {row.conversation_id: row for row in rows}
+    rows = await auth.db.execute_sql(
+        text(
+            "SELECT conversation_id, max(created_at) AS at FROM messages "
+            "WHERE tenant_id = :tenant_id AND conversation_id = ANY(:ids) AND role = 'user' "
+            "GROUP BY conversation_id"
+        ),
+        {"ids": ids},
+    )
+    customer = {row.conversation_id: row.at for row in rows}
+    return {cid: {"last": last.get(cid), "customer_at": customer.get(cid)} for cid in ids}
+
+
+def _like(value: str) -> str:
+    return "%" + value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
-    auth: AdminAuth, limit: int = Query(50, ge=1, le=200), status: Status | None = None
+    auth: AdminAuth,
+    limit: int = Query(50, ge=1, le=200),
+    status: Status | None = None,
+    q: str | None = Query(None, min_length=1, max_length=200),
 ):
-    """Newest first; ?status=waiting_human lists the customers waiting for a person."""
+    """Newest first; ?status=waiting_human lists the customers waiting for a person; ?q=
+    searches customer names, visitor ids and message text."""
     query = auth.db.select(Conversation)
     if status is not None:
         query = query.where(Conversation.status == status)
+    if q:
+        pattern = _like(q.strip())
+        matching = (
+            auth.db.select(Message)
+            .with_only_columns(Message.conversation_id)
+            .where(Message.content.ilike(pattern))
+        )
+        query = query.where(
+            Conversation.customer_name.ilike(pattern)
+            | Conversation.visitor_id.ilike(pattern)
+            | Conversation.id.in_(matching)
+        )
     conversations = await auth.db.scalars(
         query.order_by(Conversation.updated_at.desc()).limit(limit)
     )
-    counts = await _message_counts(auth, [c.id for c in conversations])
-    return [
-        ConversationOut.model_validate(c).model_copy(update={"message_count": counts.get(c.id, 0)})
-        for c in conversations
-    ]
+    ids = [c.id for c in conversations]
+    counts = await _message_counts(auth, ids)
+    summaries = await _summaries(auth, ids)
+    out = []
+    for c in conversations:
+        summary = summaries[c.id]
+        last = summary["last"]
+        customer_at = summary["customer_at"]
+        out.append(
+            ConversationOut.model_validate(c).model_copy(
+                update={
+                    "message_count": counts.get(c.id, 0),
+                    "last_message_preview": last.content[:PREVIEW_CHARS] if last else None,
+                    "last_message_role": last.role if last else None,
+                    "last_message_at": last.created_at if last else None,
+                    "unread": customer_at is not None
+                    and (c.staff_read_at is None or customer_at > c.staff_read_at),
+                }
+            )
+        )
+    return out
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
@@ -95,6 +159,15 @@ async def _out(auth: AuthContext, conversation: Conversation) -> ConversationOut
     return ConversationOut.model_validate(conversation).model_copy(
         update={"message_count": counts.get(conversation.id, 0)}
     )
+
+
+@router.post("/{conversation_id}/read", response_model=ConversationOut)
+async def mark_read(conversation_id: uuid.UUID, auth: AdminAuth):
+    """Staff opened the conversation: it is no longer unread."""
+    conversation = await _conversation(auth, conversation_id)
+    conversation.staff_read_at = func.now()
+    await auth.db.commit()
+    return await _out(auth, await _conversation(auth, conversation_id))
 
 
 @router.post("/{conversation_id}/messages", response_model=StaffReplyOut, status_code=201)

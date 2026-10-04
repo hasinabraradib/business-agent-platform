@@ -165,9 +165,16 @@ class ConversationOut(ORMModel):
     customer_name: str | None = None
     handoff_reason: str | None = None
     handoff_requested_at: datetime | None = None
+    staff_read_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     message_count: int = 0
+    # Inbox summary (list endpoint): the newest message and whether the customer wrote since
+    # staff last opened the conversation.
+    last_message_preview: str | None = None
+    last_message_role: str | None = None
+    last_message_at: datetime | None = None
+    unread: bool = False
 
 
 class MessageOut(ORMModel):

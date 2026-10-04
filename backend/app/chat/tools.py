@@ -49,6 +49,12 @@ class SearchRecord:
     timings_ms: dict[str, float]
     duration_ms: float
     embedding_cached: bool = False
+    # For the trace view: how the search ran and every chunk it returned, with scores.
+    mode: str = ""
+    threshold: float | None = None
+    results: list[dict[str, Any]] = field(default_factory=list)
+    reranker: str | None = None
+    rerank_applied: bool = False
 
 
 @dataclass
@@ -133,6 +139,10 @@ class ToolResult:
     content: str  # what the model sees
     status: str = "ok"
     summary: str = ""  # for the tool-call record (defaults to the content, shortened)
+
+
+def _score(value: float | None) -> float | None:
+    return None if value is None else round(float(value), 4)
 
 
 def location(metadata: dict[str, Any]) -> str:
@@ -246,6 +256,23 @@ class SearchKnowledgeTool(Tool):
                 timings_ms=result.timings_ms,
                 duration_ms=round((time.perf_counter() - started) * 1000, 1),
                 embedding_cached=result.embedding_cached,
+                mode=result.mode,
+                threshold=result.relevance_threshold,
+                results=[
+                    {
+                        "chunk_id": str(c.chunk_id),
+                        "document_title": c.document_title,
+                        "location": location(c.metadata),
+                        "snippet": c.content[:200],
+                        "vector_score": _score(c.vector_score),
+                        "keyword_score": _score(c.keyword_score),
+                        "fused_score": _score(c.fused_score),
+                        "rerank_score": _score(c.rerank_score),
+                    }
+                    for c in result.chunks
+                ],
+                reranker=result.reranker,
+                rerank_applied=result.rerank_applied,
             )
         )
         cited = [

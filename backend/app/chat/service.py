@@ -136,6 +136,7 @@ class _Run:
     model: str | None = None
     stored: bool = False
     context: TurnContext | None = None
+    failovers: list[dict[str, str]] = field(default_factory=list)  # models skipped this turn
 
     def ms_since(self, since: float) -> float:
         return round((time.perf_counter() - since) * 1000, 1)
@@ -244,7 +245,7 @@ class ChatService:
                     since = time.perf_counter()
                     finish: Finish | None = None
                     calls = []
-                    async for event in self._model_events(request, prefer):
+                    async for event in self._model_events(request, prefer, run.failovers):
                         if isinstance(event, TextDelta):
                             text = closing.feed(
                                 orders.feed(citations.feed(plain.feed(tags.feed(event.text))))
@@ -324,7 +325,7 @@ class ChatService:
         }
         cited = [_citation(context.sources[n]) for n in citations.used]
         run.timings["total"] = run.ms_since(run.started)
-        retrieval = self._retrieval_record(context, earlier, checks)
+        retrieval = self._retrieval_record(context, earlier, checks, run.failovers)
         message_id = await self._store(turn, run, reply, cited, outcome, None, retrieval)
         yield CitationsEvent(cited)
         yield DoneEvent(
@@ -342,9 +343,11 @@ class ChatService:
             conversation_status="waiting_human" if context.handoff else "ai",
         )
 
-    async def _model_events(self, request: ChatRequest, prefer: str | None):
+    async def _model_events(
+        self, request: ChatRequest, prefer: str | None, failovers: list | None = None
+    ):
         """The chain's events with a first-event timeout and an idle timeout."""
-        events = aiter(self.chain.stream(request, prefer=prefer))
+        events = aiter(self.chain.stream(request, prefer=prefer, failovers=failovers))
         timeout = self.config.first_token_timeout_seconds
         try:
             while True:
@@ -392,7 +395,11 @@ class ChatService:
         return found
 
     def _retrieval_record(
-        self, context: TurnContext, earlier: list[ContextChunk], checks: dict[str, Any]
+        self,
+        context: TurnContext,
+        earlier: list[ContextChunk],
+        checks: dict[str, Any],
+        failovers: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         return {
             "searches": [
@@ -405,6 +412,11 @@ class ChatService:
                     "strong_keyword_match": s.strong_keyword_match,
                     "duration_ms": s.duration_ms,
                     "embedding_cached": s.embedding_cached,
+                    "mode": s.mode,
+                    "threshold": s.threshold,
+                    "results": s.results,
+                    "reranker": s.reranker,
+                    "rerank_applied": s.rerank_applied,
                 }
                 for s in context.searches
             ],
@@ -425,6 +437,7 @@ class ChatService:
                 for a in context.actions
             ],
             "checks": checks,
+            "failovers": failovers or [],
         }
 
     async def _fail(self, turn: ChatTurnInput, run: _Run, error: str) -> AsyncIterator[ChatEvent]:
@@ -434,7 +447,7 @@ class ChatService:
         detail = f"{error}; {len(partial)} characters had been streamed" if partial else error
         retrieval = None
         if run.context is not None:
-            retrieval = self._retrieval_record(run.context, [], {})
+            retrieval = self._retrieval_record(run.context, [], {}, run.failovers)
         message_id = None
         try:
             message_id = await self._store(turn, run, text, [], "error", detail, retrieval)

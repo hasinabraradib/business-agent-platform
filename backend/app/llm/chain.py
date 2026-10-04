@@ -63,8 +63,13 @@ class ChatChain:
         return order
 
     async def stream(
-        self, request: ChatRequest, *, prefer: str | None = None
+        self,
+        request: ChatRequest,
+        *,
+        prefer: str | None = None,
+        failovers: list[dict[str, str]] | None = None,
     ) -> AsyncIterator[StreamEvent]:
+        """failovers, if given, collects each candidate that failed before one answered."""
         order = self._order(prefer)
         last_error: ChatError | None = None
         for index, candidate in enumerate(order):
@@ -90,6 +95,8 @@ class ChatChain:
                 return
             await events.aclose()
             self._cooling[candidate.label] = self._clock() + self._cooldown(last_error)
+            if failovers is not None:
+                failovers.append({"model": candidate.label, "error": str(last_error)[:300]})
             if not is_last:
                 logger.warning(
                     "%s failed over to %s: %s", candidate.label, order[index + 1].label, last_error

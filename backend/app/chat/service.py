@@ -389,7 +389,14 @@ class ChatService:
             ],
             "earlier_sources": [str(context.sources[c.marker].chunk_id) for c in earlier],
             "tools": [
-                {"step": r.step, "tool": r.tool, "status": r.status, "summary": r.result_summary}
+                {
+                    "step": r.step,
+                    "tool": r.tool,
+                    "status": r.status,
+                    "summary": r.result_summary,
+                    "arguments": r.arguments,
+                    "result": r.result,
+                }
                 for r in context.records
             ],
             "actions": [

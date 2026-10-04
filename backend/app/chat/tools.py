@@ -61,6 +61,9 @@ class Source:
     content: str
 
 
+MAX_RECORDED_RESULT_CHARS = 4000
+
+
 @dataclass
 class ToolRecord:
     step: int
@@ -69,6 +72,7 @@ class ToolRecord:
     status: str
     result_summary: str
     duration_ms: float
+    result: str = ""  # what the model saw (truncated), so replies can be checked against it
 
 
 @dataclass
@@ -466,6 +470,7 @@ class ToolRegistry:
                 status=status,
                 result_summary=(summary or content)[:500],
                 duration_ms=round((time.perf_counter() - started) * 1000, 1),
+                result=content[:MAX_RECORDED_RESULT_CHARS],
             )
         )
         return Message(role="tool", text=content, tool_call_id=call.id, tool_name=call.name)

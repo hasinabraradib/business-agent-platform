@@ -129,6 +129,14 @@ def test_spelling_flags_near_misses_only() -> None:
     assert check_texts(["সম্পূর্ণ নতুন শব্দ"], lexicon).suspected == []  # far from any: not flagged
 
 
+def test_spelling_ignores_inflections_and_numbers() -> None:
+    # Live, 2026-10-04: "বিরিয়ানির" (of the biryani) and "৭টা" (7 o'clock) were flagged.
+    lexicon = {"বিরিয়ানি", "এটা", "দাম"}
+    report_ = check_texts(["কাচ্চি বিরিয়ানির দাম", "সন্ধ্যা ৭টা পর্যন্ত"], lexicon)
+    assert report_.suspected == []
+    assert report_.words == 5  # ৭টা is not counted as a word
+
+
 # --- resumable runs and budgets ----------------------------------------------------------------
 
 

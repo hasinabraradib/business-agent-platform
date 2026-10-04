@@ -84,7 +84,9 @@ async def run_live_retrieval(owner_url: str) -> dict[str, Any]:
     validate(questions, await chunk_keys(owner_url))
     retriever = get_retriever()
     embed_started = time.perf_counter()
-    results = await retrieval.run_retrieval(retriever, tenants, questions)
+    results = await retrieval.run_retrieval(
+        retriever, tenants, questions, pause_s={"hybrid_rerank": 4.5}
+    )
     elapsed = round(time.perf_counter() - embed_started, 1)
     sweep = retrieval.threshold_sweep(results)
     return {

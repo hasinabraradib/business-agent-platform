@@ -1,6 +1,7 @@
 """Retrieval comparison: recall@k, MRR and latency per mode and language, and the relevance
 threshold analysis. Uses embeddings and the reranker only, never the chat model."""
 
+import asyncio
 import statistics
 import time
 import uuid
@@ -40,7 +41,7 @@ class QuestionResult:
 
 async def run_retrieval(
     retriever, tenants: dict[str, uuid.UUID], questions: Iterable[Question],
-    modes: Iterable[str] = MODES, top_k: int = TOP_K,
+    modes: Iterable[str] = MODES, top_k: int = TOP_K, pause_s: dict[str, float] | None = None,
 ) -> list[QuestionResult]:  # fmt: skip
     """Every question in every mode. The query embedding is warmed first (and timed
     separately by the caller if it wants), so per-mode latency is search (+ rerank) only."""
@@ -50,6 +51,8 @@ async def run_retrieval(
     results = []
     for mode in modes:
         for q in questions:
+            if pause_s and pause_s.get(mode):
+                await asyncio.sleep(pause_s[mode])  # the reranker's per-minute limit
             started = time.perf_counter()
             try:
                 found = await retriever.retrieve(tenants[q.tenant], q.question, mode, top_k)

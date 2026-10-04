@@ -84,7 +84,8 @@ def latency_and_cost(state_cases: dict[str, dict], prices: dict[str, Any]) -> di
         "turns": len(turns),
         "avg_tokens_per_turn": round(tokens / len(turns)) if turns else None,
         "ttft_median_s": round(statistics.median(ttft), 2) if ttft else None,
-        "ttft_p95_s": ttft[min(len(ttft) - 1, round(0.95 * (len(ttft) - 1)))] if ttft else None,
+        "ttft_p95_s": round(ttft[min(len(ttft) - 1, round(0.95 * (len(ttft) - 1)))], 2)
+        if ttft else None,
         "by_model": by_model,
         "cost_per_100_conversations_usd": round(cost / conversations * 100, 4)
         if conversations and priced else None,

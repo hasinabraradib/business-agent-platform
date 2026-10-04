@@ -14,7 +14,15 @@ from pathlib import Path
 from evaluation.dataset import DATA_DIR
 
 BENGALI_WORD = re.compile("[" + chr(0x0980) + "-" + chr(0x09FF) + "]+")
-BENGALI_DIGITS = re.compile("^[" + chr(0x09E6) + "-" + chr(0x09EF) + "]+$")
+HAS_DIGIT = re.compile("[" + chr(0x09E6) + "-" + chr(0x09EF) + "0-9]")
+# Case endings and classifiers, so inflected forms of lexicon words are known words:
+# বিরিয়ানির, অর্ডারের, দোকানে, শাড়িগুলো ...
+SUFFIXES = sorted(
+    ["র", "ের", "এর", "কে", "তে", "য়", "এ", "ে", "টা", "টি", "টার", "টায়", "গুলো", "গুলি",
+     "রা", "দের", "ও", "ই"],
+    key=len,
+    reverse=True,
+)  # fmt: skip
 
 
 # ড় ঢ় য় typed as letter + nukta (two code points) -> one code point, so a wrong letter counts as
@@ -49,6 +57,14 @@ def _within_one_edit(a: str, b: str) -> bool:
     return any(long[:i] + long[i + 1 :] == short for i in range(len(long)))
 
 
+def _inflected(word: str, lexicon: set[str]) -> bool:
+    return any(
+        word.endswith(suffix) and word[: -len(suffix)] in lexicon
+        for suffix in SUFFIXES
+        if len(word) > len(suffix) + 1
+    )
+
+
 @dataclass
 class SpellingReport:
     words: int = 0
@@ -66,10 +82,10 @@ def check_texts(texts: list[str], lexicon: set[str] | None = None) -> SpellingRe
     for text in texts:
         for written in BENGALI_WORD.findall(text):
             word = _canonical(written)
-            if BENGALI_DIGITS.match(word):
-                continue
+            if HAS_DIGIT.search(word):
+                continue  # numbers and times such as ৭টা are not words to spell-check
             report.words += 1
-            if word in lexicon:
+            if word in lexicon or _inflected(word, lexicon):
                 continue
             nearest = next((c for c in candidates if _within_one_edit(word, c)), None)
             if nearest is not None:

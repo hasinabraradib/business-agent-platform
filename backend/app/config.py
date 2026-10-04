@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     # Link in staff alerts; {conversation_id} is filled in.
     admin_conversation_url: str = "http://localhost:8000/v1/conversations/{conversation_id}"
     chat_poll_per_visitor_per_minute: int = 30  # widget polling for staff replies
+    # Email staff alerts (tenants set staff_alert_email). Empty host: email alerts are off.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_starttls: bool = True
 
     # Built widget bundle (web/widget/dist), served at /widget.js. A mounted volume in Docker.
     widget_dist_dir: str = "../web/widget/dist"

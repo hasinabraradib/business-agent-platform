@@ -19,6 +19,7 @@ from app.chat.ratelimit import RateLimiter
 from app.chat.service import ChatService
 from app.llm import Candidate, ChatChain, FakeChatProvider
 from app.llm.fake import offline_responder
+from app.tenancy import tenant_db
 from tests.action_helpers import NOW, RESTAURANT_TOOLS, registry, restaurant_settings, set_settings
 from tests.conftest import TEST_REDIS_URL, bearer
 
@@ -412,8 +413,8 @@ async def test_admin_staff_reply_reaches_the_telegram_customer(client, cafe, own
 async def test_staff_alert_is_skipped_without_a_staff_chat(client, make_tenant, app_engine, bot):
     tenant = await make_tenant("tg-nostaff")
     sessionmaker = async_sessionmaker(app_engine, expire_on_commit=False)
-    assert await send_staff_alert(sessionmaker, tenant.id, uuid.uuid4(), "handoff") == (
-        "skipped: no Telegram staff chat"
+    assert (await send_staff_alert(sessionmaker, tenant.id, uuid.uuid4(), "handoff")).startswith(
+        "skipped"
     )
 
 
@@ -493,3 +494,50 @@ def test_alert_snippets_are_plain_text() -> None:
     recent = [SimpleNamespace(role="assistant", content="Kacchi is **480 taka** [1][2].")]
     text = alert_text(conversation, recent, "handoff", "http://x/1")
     assert "Assistant: Kacchi is 480 taka." in text and "[1]" not in text and "**" not in text
+
+
+# --- email staff alerts (the second notifier) ---------------------------------------------------
+
+
+async def test_handoff_alert_is_emailed_when_configured(
+    client, cafe, owner_engine, app_engine, bot, monkeypatch
+) -> None:
+    from app.channels import alerts
+    from app.config import get_settings
+
+    sent = []
+
+    async def fake_send(message):
+        sent.append(message)
+
+    monkeypatch.setattr(alerts, "NOTIFIERS", [alerts.TelegramNotifier(),
+                                               alerts.EmailNotifier(fake_send)])  # fmt: skip
+    for name, value in (("smtp_host", "smtp.example"), ("smtp_from", "alerts@bap.example")):
+        monkeypatch.setattr(get_settings(), name, value)
+    await set_settings(
+        owner_engine, cafe.id,
+        restaurant_settings(enabled_tools=[*RESTAURANT_TOOLS, "request_human"],
+                            staff_alert_email="team@cafe.example"),
+    )  # fmt: skip
+    await post_update(client, cafe, update(60, "I want to talk to a real person"))
+    conversation = await conversation_of(owner_engine, cafe)
+    sessionmaker = async_sessionmaker(app_engine, expire_on_commit=False)
+    result = await send_staff_alert(sessionmaker, cafe.id, conversation.id, "handoff")
+    assert result == "telegram: sent 1 message(s); email: sent"
+    [email] = sent
+    assert email["To"] == "team@cafe.example" and email["From"] == "alerts@bap.example"
+    assert email["Subject"] == "Rahim Uddin (Telegram) would like to talk to a person"
+    body = email.get_content()
+    assert "Customer: I want to talk to a real person" in body
+    assert "Reply to this message" not in body  # email replies don't reach the customer
+    assert f"/v1/conversations/{conversation.id}" in body
+
+
+async def test_email_notifier_is_off_without_smtp_or_address(app_engine, make_tenant) -> None:
+    from app.channels.alerts import EmailNotifier
+    from app.models import Conversation
+
+    tenant = await make_tenant("mail-off")
+    notifier = EmailNotifier(lambda message: None)
+    async with tenant_db(async_sessionmaker(app_engine), tenant.id) as db:
+        assert await notifier.notify(db, Conversation(visitor_id="v"), "s", "t") is None

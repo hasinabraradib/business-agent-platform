@@ -49,6 +49,10 @@ class TenantChatSettings(BaseModel):
     # Optional own wording for the handoff acknowledgement (any language; placeholders {when}
     # = when the team is back, {reply_time} = follow_up_promise). Empty: built-in messages.
     handoff_online_message: str = Field(default="", max_length=300)
+    # Where handoff alerts are emailed (needs the platform's SMTP settings). Empty: no email.
+    staff_alert_email: str = Field(
+        default="", max_length=200, pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    )
     handoff_offline_message: str = Field(default="", max_length=300)
 
     @field_validator("opening_hours")

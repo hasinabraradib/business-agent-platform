@@ -21,7 +21,13 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.chat.filters import CitationFilter, OutcomeTagFilter, PlainTextFilter, decide_outcome
+from app.chat.filters import (
+    CitationFilter,
+    ClosingFilter,
+    OutcomeTagFilter,
+    PlainTextFilter,
+    decide_outcome,
+)
 from app.chat.prompts import (
     ContextChunk,
     HistoryTurn,
@@ -29,6 +35,7 @@ from app.chat.prompts import (
     contact_line,
     customer_block,
     history_user_block,
+    is_identity_question,
     mentions_contact,
     new_nonce,
     reply_language,
@@ -203,6 +210,7 @@ class ChatService:
         tags = OutcomeTagFilter()
         citations = CitationFilter(context.valid_markers)  # grows as searches find sources
         plain = PlainTextFilter()
+        closing = ClosingFilter()
         prefer: str | None = None
         error: str | None = None
         try:
@@ -227,7 +235,7 @@ class ChatService:
                     calls = []
                     async for event in self._model_events(request, prefer):
                         if isinstance(event, TextDelta):
-                            text = citations.feed(plain.feed(tags.feed(event.text)))
+                            text = closing.feed(citations.feed(plain.feed(tags.feed(event.text))))
                             if text:
                                 if "first_token" not in run.timings:
                                     run.timings["first_token"] = run.ms_since(run.started)
@@ -263,6 +271,7 @@ class ChatService:
             return
 
         tail = citations.feed(plain.feed(tags.flush()) + plain.flush()) + citations.flush()
+        tail = closing.feed(tail) + closing.flush()
         if context.handoff:
             # Written by code from the tenant's settings, not by the model: it can't invent a
             # reply time or office hours. Anything the model wrote first stays before it.
@@ -279,8 +288,12 @@ class ChatService:
             bool(context.searches),
             action=bool(context.actions),
             lookup=context.lookups > 0,
-            proposed=any(r.status == "needs_confirmation" for r in context.records),
+            # Collecting details: a proposal awaiting confirmation, or a call missing details.
+            proposed=any(
+                r.status in ("needs_confirmation", "invalid_arguments") for r in context.records
+            ),
             handoff=context.handoff,
+            identity=is_identity_question(turn.message),
         )
         contact = turn.settings.fallback_contact
         if outcome == "no_answer" and contact and not mentions_contact("".join(run.reply), contact):

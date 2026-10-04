@@ -75,6 +75,113 @@ class OutcomeTagFilter:
         return text
 
 
+# Sign-offs the voice rules forbid. gpt-oss kept ending with "If you need more details, let us
+# know." although the prompt said not to; the closing filter drops them in code.
+CLOSINGS = [
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"^(?:and )?(?:if|should) you (?:need|have|want|would like)\b.*\b(?:let (?:us|me) know|"
+        r"just ask|feel free|reach out|just say|happy to help|here to help)\b",
+        r"^(?:please )?(?:feel free|don't hesitate|do not hesitate) to\b",
+        r"^(?:just )?let (?:us|me) know if\b",
+        r"^(?:is there )?anything else (?:i|we) can\b",
+        r"^how else can (?:i|we)\b",
+        r"^(?:i )?hope (?:this|that) helps\b",
+        r"^(?:we're|we are|i'm|i am) (?:always )?here (?:to help|if you need)\b",
+        r"\b(?:ar|aro|onno )?kichu (?:lagle|dorkar hole|jante chaile|proyojon hole)\b.*"
+        r"\b(?:janaben|bolben|jiggesh korben|message korben)\b",
+        r"(?:আর |আরও |অন্য )?কিছু (?:লাগলে|জানতে চাইলে|দরকার হলে|প্রয়োজন হলে).*(?:জানাবেন|বলবেন)",
+    )
+]
+SENTENCE_END = re.compile(r"[.!?\u0964]+[\"')\]]*\s+|\n+")
+TRAILING_END = re.compile(r"[.!?\u0964\"')\]]+$")  # may end a sentence once a space follows
+
+
+def is_closing(sentence: str) -> bool:
+    text = sentence.strip().strip("!.?\u0964 ")
+    return bool(text) and any(pattern.search(text) for pattern in CLOSINGS)
+
+
+# How sign-offs start. Only a sentence that may still turn into one is held back; every other
+# sentence streams token by token as before.
+CLOSING_STARTS = (
+    "if you", "and if you", "should you", "feel free", "please feel", "please don't",
+    "please do not", "don't hesitate", "do not hesitate", "let us know", "let me know",
+    "just let", "anything else", "is there anything", "how else", "hope this", "hope that",
+    "i hope", "we're here", "we are here", "i'm here", "i am here", "we're always",
+    "ar kichu", "aro kichu", "onno kichu", "kichu lagle", "kichu dorkar", "kichu jante",
+    "apnar jonne kichu", "আর কিছু", "আরও কিছু", "অন্য কিছু", "কিছু লাগলে", "কিছু দরকার",
+    "কিছু জানতে",
+)  # fmt: skip
+MIN_DECIDE_CHARS = 3
+
+
+def _may_be_closing(start: str) -> bool:
+    text = " ".join(start.casefold().split())
+    return any(c.startswith(text) or text.startswith(c) for c in CLOSING_STARTS)
+
+
+class ClosingFilter:
+    """Drops a trailing sign-off ("If you need anything else, just let us know.").
+
+    A sentence that starts like a sign-off is held until it ends; a finished sign-off is held
+    until more of the reply follows it (then it is released). Held sign-offs at the end of the
+    reply are dropped, unless the reply is nothing but a sign-off. Other sentences stream as
+    they arrive.
+    """
+
+    def __init__(self) -> None:
+        self._buffer = ""  # the current sentence, not yet released
+        self._streaming = False  # the current sentence can't be a sign-off: pass it through
+        self._held: list[str] = []  # finished sign-offs (and blank lines after them)
+        self._released = False
+
+    def _emit(self, text: str, out: list[str]) -> None:
+        if text:
+            out.append("".join(self._held) + text)
+            self._held = []
+            self._released = self._released or bool(text.strip())
+
+    def feed(self, text: str) -> str:
+        self._buffer += text
+        out: list[str] = []
+        while self._buffer:
+            match = SENTENCE_END.search(self._buffer)
+            if self._streaming:
+                if match is None:
+                    # Keep trailing punctuation: if a space follows, the sentence has ended and
+                    # the next one must be checked for a sign-off.
+                    hold = TRAILING_END.search(self._buffer)
+                    cut = hold.start() if hold else len(self._buffer)
+                    self._emit(self._buffer[:cut], out)
+                    self._buffer = self._buffer[cut:]
+                    break
+                self._emit(self._buffer[: match.end()], out)
+                self._buffer, self._streaming = self._buffer[match.end() :], False
+                continue
+            if match is not None:
+                sentence, self._buffer = self._buffer[: match.end()], self._buffer[match.end() :]
+                if is_closing(sentence) or (self._held and not sentence.strip()):
+                    self._held.append(sentence)
+                else:
+                    self._emit(sentence, out)
+                continue
+            start = self._buffer.lstrip()
+            if len(start) < MIN_DECIDE_CHARS or _may_be_closing(start):
+                break  # wait for more text
+            self._streaming = True
+        return "".join(out)
+
+    def flush(self) -> str:
+        tail, held = self._buffer, "".join(self._held)
+        self._buffer, self._held, self._streaming = "", [], False
+        if tail.strip() and not is_closing(tail):
+            return held + tail
+        if not self._released:
+            return held + tail  # the reply is only a sign-off: keep it
+        return ""
+
+
 class PlainTextFilter:
     """The widget shows plain text: drops Markdown bold markers ("**") and turns non-breaking
     hyphens back into "-" (gpt-oss wrote booking references as "R\u2011K7C7FM", which a
@@ -177,6 +284,7 @@ def decide_outcome(
     lookup: bool = False,
     proposed: bool = False,
     handoff: bool = False,
+    identity: bool = False,
 ) -> str:
     """The stored outcome, decided from what code can verify:
 
@@ -187,9 +295,10 @@ def decide_outcome(
     - no_answer: a search was made but the reply cites nothing (nothing relevant was found, or
       the reply is not grounded), or the model reports it could not answer, or it claims an
       answer with nothing to verify it;
-    - smalltalk: no search and no claim (the model's [[smalltalk]] tag, or no tag at all), or
-      details read back for the customer to confirm (a write tool's proposal), which collects
-      details rather than claiming an answer.
+    - smalltalk: no search and no claim (the model's [[smalltalk]] tag, or no tag at all);
+      collecting details (a write tool's proposal read back for confirmation, or a tool call
+      that was missing details); or answering "are you a real person?" (identity), which is
+      not a knowledge gap.
     """
     if handoff:
         return "handoff"
@@ -199,7 +308,7 @@ def decide_outcome(
         return "answered"
     if searched:
         return "no_answer"
-    if proposed:
+    if proposed or identity:
         return "smalltalk"
     if tag in (None, "smalltalk"):
         return "smalltalk"

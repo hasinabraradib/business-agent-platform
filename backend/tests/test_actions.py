@@ -128,6 +128,23 @@ async def test_read_back_is_not_a_failed_answer_whatever_the_models_tag(client, 
     assert CONTACT not in body["reply"]
 
 
+async def test_asking_for_missing_details_is_not_a_failed_answer(client, cafe, provider):
+    # Real run, 2026-10-04: capture_lead with empty name and contact (invalid_arguments), then
+    # "could you share your name?" was scored no_answer and got the fallback contact appended.
+    def asks_for_details(request, model):
+        if request.messages[-1].role == "tool":
+            return "[[no_answer]]\nSure, could you share your name and a phone number?"
+        return Scripted(
+            tool_calls=[("capture_lead", {"name": "", "contact": "", "interest": "50"})]
+        )
+
+    provider.responder = asks_for_details
+    body = await say(client, cafe, "I want 50 sarees for a wedding, can someone call me?")
+    assert body["retrieval"]["tools"][0]["status"] == "invalid_arguments"
+    assert body["outcome"] == "smalltalk"
+    assert CONTACT not in body["reply"]
+
+
 async def test_booking_happens_only_after_confirmation(client, cafe, owner_engine, job_queue):
     await configure_webhook(owner_engine, cafe.id)
     first = await say(client, cafe, "table for 4 tomorrow 8pm, Rahim 01711-000000")

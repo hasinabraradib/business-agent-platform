@@ -4,12 +4,19 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.chat.filters import CitationFilter, OutcomeTagFilter, PlainTextFilter, decide_outcome
+from app.chat.filters import (
+    CitationFilter,
+    ClosingFilter,
+    OutcomeTagFilter,
+    PlainTextFilter,
+    decide_outcome,
+)
 from app.chat.prompts import (
     CITE_REMINDER,
     ContextChunk,
     apology,
     customer_block,
+    is_identity_question,
     local_time,
     mentions_contact,
     reply_language,
@@ -130,12 +137,12 @@ def test_system_prompt_has_time_voice_and_grounding_rules() -> None:
         "Tone: warm",
         "Saturday, 3 October 2026, 7:30 PM (Asia/Dhaka)",
         "Banglish",
-        'never end with "How else can I assist you?"',
+        '"How else can I assist you?"',
         "Never claim to be human",
         "virtual assistant",
         "call 01700",
         "At most two searches",
-        "search the opening hours, compare them with the current local time",
+        "answer yes or no and until when",
         "Never claim something was booked",
         "<customer-message-abcd1234>",
         "Mention the Friday lunch special",
@@ -303,3 +310,100 @@ def test_plain_text_filter(text, expected) -> None:
         assert _run(plain, [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]) == (
             expected
         )
+
+
+# --- voice fixes from the real-model run (2026-10-04) ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # gpt-oss: "...shipped and on its way. If you need more details, let us know."
+        ("Your order is shipped [1]. If you need more details, let us know.",
+         "Your order is shipped [1]. "),
+        ("It's 480 taka [2].\n\nIf you need anything else, just let us know!",
+         "It's 480 taka [2].\n\n"),
+        ("Ji, 480 taka [1]. Ar kichu lagle janaben.", "Ji, 480 taka [1]. "),
+        ("শুক্রবার দুপুর আড়াইটায় খুলি [1]। আর কিছু জানতে চাইলে জানাবেন।",
+         "শুক্রবার দুপুর আড়াইটায় খুলি [1]। "),
+        ("Feel free to ask. We open at noon [1].",
+         "Feel free to ask. We open at noon [1]."),  # not the last sentence: kept
+        ("If you come before 8 pm, ask for the garden table [1].",
+         "If you come before 8 pm, ask for the garden table [1]."),  # starts alike, isn't one
+        ("Anytime! Let me know if you need anything.", "Anytime! "),
+        ("Let me know if you need anything!", "Let me know if you need anything!"),  # all of it
+    ],
+)  # fmt: skip
+def test_closing_filter_drops_trailing_sign_offs(text, expected) -> None:
+    for chunk_size in (1, 4, len(text)):
+        closing = ClosingFilter()
+        pieces = [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
+        assert _run(closing, pieces) == expected, chunk_size
+
+
+def test_closing_filter_keeps_ordinary_sentences_streaming() -> None:
+    closing = ClosingFilter()
+    assert closing.feed("Kacchi Biryani is ") == "Kacchi Biryani is "  # no waiting for "."
+    assert closing.feed("480 taka [1].") == "480 taka [1"  # the end waits for what follows
+    assert closing.feed(" If you") == "]. "  # a new sentence that might be a sign-off: held
+    assert closing.feed(" like spice, try the Rezala.") == ""
+    assert closing.flush() == "If you like spice, try the Rezala."  # not a sign-off after all
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("are you a real person?", True),
+        ("Am I talking to a bot?", True),
+        ("apni ki manush?", True),
+        ("আপনি কি মানুষ?", True),
+        ("Are you open now?", False),
+        ("I want to talk to a real person", False),  # a handoff request, not a question about us
+    ],
+)
+def test_identity_questions(message, expected) -> None:
+    assert is_identity_question(message) is expected
+
+
+def test_identity_and_collecting_details_are_smalltalk() -> None:
+    # "are you a real person?" was no_answer and polluted the knowledge-gaps report.
+    assert decide_outcome("no_answer", [], False, identity=True) == "smalltalk"
+    assert decide_outcome("no_answer", [], True, identity=True) == "no_answer"  # it searched
+    # A tool call missing details, then "could you share your name?", was no_answer + contact.
+    assert decide_outcome("no_answer", [], False, proposed=True) == "smalltalk"
+
+
+def test_prompt_puts_citations_at_the_end_of_the_sentence() -> None:
+    # gpt-oss wrote "শেষ অর্ডার 10:30 টা পর্যন্ত নি[1]।": the marker replaced the end of a word.
+    prompt = system_prompt(SETTINGS, NOW, "abcd1234")
+    assert "at the end of the sentence" in prompt and "never inside a word" in prompt
+    assert "খুলি [1]।" in prompt
+
+
+def test_prompt_states_open_now_and_spoken_times() -> None:
+    hours = {d: [["12:00", "23:00"]] for d in ("sat", "sun", "mon", "tue", "wed", "thu")}
+    with_hours = TenantChatSettings.from_tenant(
+        "Nodi Kitchen",
+        {"timezone": "Asia/Dhaka", "opening_hours": {**hours, "fri": [["14:30", "23:00"]]}},
+    )
+    prompt = system_prompt(with_hours, NOW, "abcd1234")  # Saturday 7:30 pm
+    assert (
+        "Opening status right now, from Nodi Kitchen's settings: open now, until 11 pm tonight."
+        in prompt
+    )
+    friday_morning = datetime(2026, 10, 2, 4, 0, tzinfo=UTC)  # 10 am in Dhaka
+    assert "closed now; opens today at 2:30 pm" in system_prompt(with_hours, friday_morning, "n")
+    assert '"dupur 12 ta"' in prompt and 'never "12:00" or "23:00"' in prompt
+    assert "Opening status" not in system_prompt(SETTINGS, NOW, "n")  # no hours set: no claim
+
+
+def test_prompt_and_handoff_guidance_forbid_pretending_to_cancel() -> None:
+    # gpt-oss answered "can you cancel my order?" with "Sure, ... so we can process the
+    # cancellation?" although no tool cancels anything.
+    prompt = system_prompt(SETTINGS, NOW, "abcd1234")
+    assert "Never agree to, or start collecting details for, something no" in prompt
+    assert "cancelling, refunding or changing an order" in prompt
+    from app.chat.actions import RequestHumanTool
+
+    guidance = RequestHumanTool().guidance(SETTINGS)
+    assert "cancelling or changing an order" in guidance and "instead of saying 'sure'" in guidance

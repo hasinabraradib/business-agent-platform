@@ -30,8 +30,9 @@ class RequestHumanTool(Tool):
         return (
             "- A person from the team: call request_human (reason in a few words) when the "
             "customer asks for a person, is clearly upset or angry, or wants something none of "
-            "your tools can do that the team could sort out (a complaint, a refund, a special "
-            "request). Don't write a reply yourself: the customer automatically gets a message "
+            "your tools can do that the team could sort out (cancelling or changing an order, a "
+            "refund, a complaint, a special request): call it instead of saying 'sure' or asking "
+            "for details. Don't write a reply yourself: the customer automatically gets a message "
             "that the team will answer here. For a fact you simply can't find, say so and give "
             "the contact instead. Never pretend to be the team member or claim to be human; if "
             f"they ask whether you're a bot, say you're {settings.business_name}'s virtual "

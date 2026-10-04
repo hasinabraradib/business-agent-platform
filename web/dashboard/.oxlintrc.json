@@ -1,0 +1,20 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "jsx-a11y", "typescript"],
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "eqeqeq": "error",
+    "react/no-danger": "error",
+    "jsx-a11y/alt-text": "error",
+    "jsx-a11y/anchor-is-valid": "error",
+    "jsx-a11y/label-has-associated-control": "off",
+    // role="status"/"group" on block elements is correct and well supported; <output> may not
+    // contain block content.
+    "jsx-a11y/prefer-tag-over-role": "off",
+    // Screens load data on mount and poll: that is synchronising with an external system.
+    "react/set-state-in-effect": "off",
+    "react/react-in-jsx-scope": "off"
+  },
+  "ignorePatterns": [".next", "node_modules", "next-env.d.ts"]
+}

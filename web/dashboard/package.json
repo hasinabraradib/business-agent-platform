@@ -1,0 +1,40 @@
+{
+  "name": "@business-agent-platform/dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dashboard for shop owners and staff: inbox, knowledge, gaps, traces, bookings, settings.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "tokens": "node --experimental-strip-types --no-warnings scripts/sync-tokens.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings src tests e2e scripts",
+    "test": "vitest run",
+    "e2e": "playwright test",
+    "screenshots": "playwright test --project=screenshots",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run build"
+  },
+  "dependencies": {
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "happy-dom": "20.14.5",
+    "oxlint": "1.86.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3",
+    "vitest": "5.0.3"
+  }
+}

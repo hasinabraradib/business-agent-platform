@@ -1,0 +1,51 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/* Tailwind theme from the shared design tokens (web/widget/src/tokens.ts), so classes like
+   bg-ink, text-muted, bg-accent and rounded-panel use exactly the widget's values. */
+@theme {
+  --color-ink: var(--bap-color-ink);
+  --color-ink-soft: var(--bap-color-ink-soft);
+  --color-muted: var(--bap-color-muted);
+  --color-surface: var(--bap-color-surface);
+  --color-canvas: var(--bap-color-canvas);
+  --color-subtle: var(--bap-color-subtle);
+  --color-subtle-hover: var(--bap-color-subtle-hover);
+  --color-accent: var(--bap-color-accent);
+  --color-violet: var(--bap-color-violet);
+  --color-violet-soft: var(--bap-color-violet-soft);
+  --color-violet-ink: var(--bap-color-violet-ink);
+  --color-online: var(--bap-color-online);
+  --color-danger: var(--bap-color-danger);
+  --color-danger-soft: var(--bap-color-danger-soft);
+  --color-focus: var(--bap-color-focus);
+  --radius-panel: var(--bap-radius-panel);
+  --radius-bubble: var(--bap-radius-bubble);
+  --radius-pill: var(--bap-radius-pill);
+  --shadow-soft: var(--bap-shadow-soft);
+  --shadow-panel: var(--bap-shadow-panel);
+  --font-sans: var(--bap-font-family);
+}
+
+html {
+  background: var(--bap-color-canvas);
+  color: var(--bap-color-ink);
+  font-family: var(--bap-font-family);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One visible focus style everywhere (keyboard users). */
+:focus-visible {
+  outline: 3px solid var(--bap-color-focus);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

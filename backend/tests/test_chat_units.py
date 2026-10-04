@@ -445,3 +445,12 @@ def test_order_fact_filter_only_acts_after_an_order_lookup() -> None:
     assert _run(orders, [text[i : i + 5] for i in range(0, len(text), 5)]) == (
         "Your order is shipped. Anything else?"
     )
+
+
+def test_handoff_guidance_defers_to_an_existing_team_message() -> None:
+    # Live, 2026-10-04: after a hand-back the model handed over again ("customer asks to confirm
+    # reservation") instead of repeating the team's "call before 6 pm on Thursday".
+    from app.chat.actions import RequestHumanTool
+
+    guidance = RequestHumanTool().guidance(SETTINGS)
+    assert 'if a "Message from the team" source already answers the question' in guidance

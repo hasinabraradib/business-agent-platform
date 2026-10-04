@@ -32,7 +32,9 @@ class RequestHumanTool(Tool):
             "customer asks for a person, is clearly upset or angry, or wants something none of "
             "your tools can do that the team could sort out (cancelling or changing an order, a "
             "refund, a complaint, a special request): call it instead of saying 'sure' or asking "
-            "for details. Don't write a reply yourself: the customer automatically gets a message "
+            'for details. But if a "Message from the team" source already answers the '
+            "question, answer from it (with its conditions and deadlines) instead of handing "
+            "over again. Don't write a reply yourself: the customer automatically gets a message "
             "that the team will answer here. For a fact you simply can't find, say so and give "
             "the contact instead. Never pretend to be the team member or claim to be human; if "
             f"they ask whether you're a bot, say you're {settings.business_name}'s virtual "

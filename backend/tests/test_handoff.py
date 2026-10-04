@@ -21,9 +21,7 @@ from tests.conftest import bearer
 
 TOOLS = [*RESTAURANT_TOOLS, "request_human"]
 PROMISE = "within one working day"
-ONLINE_ACK = (
-    "I've passed this to our team. They're online now and will reply here within one working day."
-)
+ONLINE_ACK = "I've passed this to our team. They're online now and will reply here soon."
 
 
 @pytest.fixture
@@ -193,8 +191,8 @@ async def test_request_human_in_banglish(client, cafe, owner_engine) -> None:
     body = await say(client, cafe, "ami manush er sathe kotha bolte chai")
     assert body["outcome"] == "handoff"
     assert body["reply"] == (
-        "Apnar message amader team ke pathiye diyechi. Team ekhon online ache, within one "
-        "working day ekhanei reply dibe."
+        "Apnar message amader team ke pathiye diyechi. Team ekhon online ache, kichukkhoner "
+        "moddhei ekhanei reply dibe."
     )
     assert await status_of(owner_engine, body["conversation_id"]) == "waiting_human"
 
@@ -304,14 +302,31 @@ def test_acknowledgement_outside_hours_says_when_the_team_is_back(now, language,
     assert acknowledgement(settings(follow_up_promise=PROMISE), language, now) == expected
 
 
-def test_acknowledgement_without_a_reply_time_or_hours_promises_nothing() -> None:
-    no_promise = acknowledgement(settings(), "english", dhaka(3, 19))
-    assert (
-        no_promise
-        == "I've passed this to our team. They're online now and will reply here shortly."
-    )
+def test_online_acknowledgement_never_pairs_online_with_a_reply_time() -> None:
+    # Was "They're online now and will reply here within one working day."
+    online = acknowledgement(settings(follow_up_promise=PROMISE), "english", dhaka(3, 19))
+    assert online == "I've passed this to our team. They're online now and will reply here soon."
+    assert PROMISE not in online
     no_hours = acknowledgement(settings(opening_hours={}), "english", dhaka(3, 19))
     assert no_hours == "I've passed this to our team. They'll reply here as soon as they can."
+    with_promise = acknowledgement(
+        settings(opening_hours={}, follow_up_promise=PROMISE), "english", dhaka(3, 19)
+    )
+    assert with_promise.endswith("They'll reply here within one working day.")
+
+
+def test_acknowledgement_uses_the_tenants_own_wording() -> None:
+    custom = settings(
+        follow_up_promise="by tomorrow",
+        handoff_online_message="Rumana or Sabbir will pick this up in a few minutes.",
+        handoff_offline_message="We're closed now; back {when}. Expect a reply {reply_time}.",
+    )
+    assert acknowledgement(custom, "banglish", dhaka(3, 19)) == (
+        "Rumana or Sabbir will pick this up in a few minutes."
+    )
+    assert acknowledgement(custom, "english", dhaka(2, 10)) == (
+        "We're closed now; back today at 2:30 pm. Expect a reply by tomorrow."
+    )
 
 
 def test_team_availability_handles_closing_after_midnight() -> None:

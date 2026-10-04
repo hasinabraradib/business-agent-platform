@@ -339,8 +339,7 @@ async def test_handoff_staff_alert_and_staff_reply_from_telegram(
     conversation = await conversation_of(owner_engine, cafe)
     assert conversation.status == "waiting_human"
     assert [p["text"] for p in bot.sent(CUSTOMER_CHAT)] == [
-        "I've passed this to our team. They're online now and will reply here within one "
-        "working day."
+        "I've passed this to our team. They're online now and will reply here soon."
     ]
     assert job_queue.alerts == [(cafe.id, conversation.id, "handoff")]
 
@@ -356,7 +355,7 @@ async def test_handoff_staff_alert_and_staff_reply_from_telegram(
         "Last messages:\n"
         "Customer: I want to talk to a real person\n"
         "Assistant: I've passed this to our team. They're online now and will reply here "
-        "within one working day.\n\n"
+        "soon.\n\n"
         "Reply to this message to answer the customer.\n"
         f"Open: http://localhost:8000/v1/conversations/{conversation.id}"
     )

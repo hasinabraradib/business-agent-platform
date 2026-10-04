@@ -44,7 +44,12 @@ class TenantChatSettings(BaseModel):
     opening_hours: OpeningHours = Field(default_factory=dict)
     max_online_party_size: int = Field(default=8, ge=1, le=100)
     # What the assistant may say about follow-up timing for leads; empty: promise no time.
+    # Also the reply time in the handoff acknowledgement when the team is offline.
     follow_up_promise: str = Field(default="", max_length=200)
+    # Optional own wording for the handoff acknowledgement (any language; placeholders {when}
+    # = when the team is back, {reply_time} = follow_up_promise). Empty: built-in messages.
+    handoff_online_message: str = Field(default="", max_length=300)
+    handoff_offline_message: str = Field(default="", max_length=300)
 
     @field_validator("opening_hours")
     @classmethod

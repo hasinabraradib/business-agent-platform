@@ -15,7 +15,21 @@ export interface Session {
   expires: number; // epoch seconds
 }
 
-function secretKey(secret = process.env.SESSION_SECRET ?? ""): Buffer {
+// Without SESSION_SECRET (e.g. a quick local run) a random secret is made at start: nothing
+// secret is committed, and sessions simply end when the server restarts.
+let ephemeral: string | null = null;
+
+function configuredSecret(): string {
+  const value = process.env.SESSION_SECRET ?? "";
+  if (value) return value;
+  if (!ephemeral) {
+    ephemeral = randomBytes(32).toString("hex");
+    console.warn("SESSION_SECRET is not set: using a random one; sessions end on restart.");
+  }
+  return ephemeral;
+}
+
+function secretKey(secret = configuredSecret()): Buffer {
   if (secret.length < 32) {
     throw new Error("SESSION_SECRET must be set to at least 32 random characters");
   }

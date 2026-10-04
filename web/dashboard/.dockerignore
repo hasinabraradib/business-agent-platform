@@ -1,0 +1,9 @@
+node_modules
+.next
+test-results
+playwright-report
+e2e
+tests
+*.tsbuildinfo
+next-env.d.ts
+scripts

@@ -4,7 +4,9 @@ const config: NextConfig = {
   output: "standalone", // a small self-contained server for the Docker image
   poweredByHeader: false,
   reactStrictMode: true,
-  images: { unoptimized: true }, // no image optimiser (and so no sharp/libvips) is used
+  images: { unoptimized: true }, // no image optimiser is used...
+  // ...so sharp and its LGPL libvips binaries are kept out of the standalone server.
+  outputFileTracingExcludes: { "*": ["node_modules/sharp/**", "node_modules/@img/**"] },
   async headers() {
     return [
       {

@@ -9,7 +9,7 @@
     "build": "next build",
     "start": "next start -p 3001",
     "tokens": "node --experimental-strip-types --no-warnings scripts/sync-tokens.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.check.json",
     "lint": "oxlint --deny-warnings src tests e2e scripts",
     "test": "vitest run",
     "e2e": "playwright test",

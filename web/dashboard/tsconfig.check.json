@@ -1,0 +1,6 @@
+{
+  // Everything, for `npm run typecheck`: the app plus tests, end-to-end tests and scripts (which
+  // import the widget's tokens, so they are left out of the app build's own type check).
+  "extends": "./tsconfig.json",
+  "include": ["next-env.d.ts", "src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "e2e/**/*.ts", "scripts/**/*.ts", "*.ts", ".next/types/**/*.ts"]
+}

@@ -50,6 +50,139 @@ uv run pytest
 
 Apply migrations by hand with `uv run alembic upgrade head` (from `backend/`).
 
+## Evaluation
+
+Measured, repeatable checks in two tiers (details in [evals/README.md](evals/README.md)):
+
+- **Deterministic tier:** runs on every push, free (`cd backend && uv run python -m evaluation
+  deterministic`). It uses offline providers to score retrieval on 100 labelled questions,
+  groundedness, and 17 code-enforced rules and safety probes plus 3 known-failure cases. CI fails
+  below the floors in `evals/config.json`.
+- **Live tier:** manual, budgeted and resumable (`uv run python -m evaluation live --keys-file
+  …`). It runs real embeddings, reranker and chat models, never automatically. Results go to
+  `evals/results/`, and `python -m evaluation report --update-readme` refreshes the block below.
+
+### Latest live results
+
+<!-- eval-results:begin -->
+Latest live evaluation: 2026-10-04.
+
+**Retrieval** (100 labelled questions, gemini-embedding-2; reranker LLMReranker). recall@k = share of answerable questions with an expected chunk in the top k.
+
+| mode | questions | recall@3 | recall@5 | mrr | median_ms |
+|---|---|---|---|---|---|
+| vector | 86 | 1.00 | 1.00 | 0.99 | 6.2 |
+| keyword | 86 | 0.81 | 0.81 | 0.77 | 4.1 |
+| hybrid | 86 | 0.98 | 0.99 | 0.95 | 4.4 |
+| hybrid_rerank | 86 | 1.00 | 1.00 | 1.00 | 1849.8 |
+
+By language:
+
+| mode | language | questions | recall@3 | recall@5 | mrr |
+|---|---|---|---|---|---|
+| vector | en | 61 | 1.00 | 1.00 | 1.00 |
+| vector | banglish | 14 | 1.00 | 1.00 | 1.00 |
+| vector | bn | 11 | 1.00 | 1.00 | 0.95 |
+| keyword | en | 61 | 0.90 | 0.90 | 0.86 |
+| keyword | banglish | 14 | 0.79 | 0.79 | 0.70 |
+| keyword | bn | 11 | 0.36 | 0.36 | 0.36 |
+| hybrid | en | 61 | 0.98 | 0.98 | 0.96 |
+| hybrid | banglish | 14 | 0.93 | 1.00 | 0.91 |
+| hybrid | bn | 11 | 1.00 | 1.00 | 0.91 |
+| hybrid_rerank | en | 61 | 1.00 | 1.00 | 1.00 |
+| hybrid_rerank | banglish | 14 | 1.00 | 1.00 | 1.00 |
+| hybrid_rerank | bn | 11 | 1.00 | 1.00 | 1.00 |
+
+Relevance threshold (the hybrid run's top vector similarity, or a strong keyword match):
+
+| threshold | unanswerable wrongly passed | answerable wrongly blocked |
+|---|---|---|
+| 0.45 | 14/14 | 0/86 |
+| 0.50 | 14/14 | 0/86 |
+| 0.55 | 13/14 | 0/86 |
+| 0.60 | 12/14 | 0/86 |
+| **0.65** (in use) | 6/14 | 0/86 |
+| 0.70 | 2/14 | 6/86 |
+| 0.75 | 0/14 | 25/86 |
+
+Recommended threshold from this run: 0.65 (in use: 0.65; not changed automatically).
+
+**Chat cases** (**PARTIAL: 7 of 30 cases run**): 6 passed, 1 failed; pending: tool-catalog-nuts, tool-catalog-under-500, tool-search-closing, tool-search-price, tool-search-delivery, tool-smalltalk-hi, tool-smalltalk-thanks, tool-reservation-confirm, tool-reservation-15, tool-reservation-3am, tool-order-wrong-digits, tool-order-unknown, tool-lead-capture, handoff-english, handoff-banglish, handoff-angry, handoff-identity, safety-injection-message, safety-reveal-banglish, safety-ignore-rules, safety-fake-system, safety-document-injection, safety-cross-tenant.
+
+| case | category | result | reason |
+|---|---|---|---|
+| known-order-estimate | known_failure | pass |  |
+| known-staff-detail | known_failure | pass |  |
+| known-cancel-order | known_failure | pass |  |
+| bn-friday-hours | language | pass |  |
+| bn-kacchi-price | language | pass |  |
+| bn-delivery-charge | language | pass |  |
+| bn-refund-time | language | FAIL | reply_matches: no match for /\b5\b|৫/ |
+| tool-catalog-nuts | tool | pending | – |
+| tool-catalog-under-500 | tool | pending | – |
+| tool-search-closing | tool | pending | – |
+| tool-search-price | tool | pending | – |
+| tool-search-delivery | tool | pending | – |
+| tool-smalltalk-hi | tool | pending | – |
+| tool-smalltalk-thanks | tool | pending | – |
+| tool-reservation-confirm | tool | pending | – |
+| tool-reservation-15 | tool | pending | – |
+| tool-reservation-3am | tool | pending | – |
+| tool-order-wrong-digits | tool | pending | – |
+| tool-order-unknown | tool | pending | – |
+| tool-lead-capture | tool | pending | – |
+| handoff-english | handoff | pending | – |
+| handoff-banglish | handoff | pending | – |
+| handoff-angry | handoff | pending | – |
+| handoff-identity | handoff | pending | – |
+| safety-injection-message | safety | pending | – |
+| safety-reveal-banglish | safety | pending | – |
+| safety-ignore-rules | safety | pending | – |
+| safety-fake-system | safety | pending | – |
+| safety-document-injection | safety | pending | – |
+| safety-cross-tenant | safety | pending | – |
+
+**Groundedness** (answered turns, checkable claims: prices, times, quantities, dates, phones, statuses, delivery estimates): 5 of 5 fully supported (100.0%); 0.0% with an unsupported claim.
+
+**Bengali-script spelling** (suspected, lexicon-based): 0 in 46 words (0.0 per 100 words) over 4 replies: [].
+
+**Latency and cost** (8 turns): time to first token median 1.28 s, p95 2.26 s; 4400 tokens per turn; about $0.079 per 100 conversations at published prices.
+
+**Gemini fallback, time to first event** (real system prompt and tools):
+
+| model | samples | median_s | p95_s | within_3s | errors |
+|---|---|---|---|---|---|
+| gemini-3.8-flash | 3 | 6.44 | 12.95 | 1 | 2 |
+| gemini-3.6-flash | 5 | 2.05 | 2.3 | 5 | 0 |
+<!-- eval-results:end -->
+
+### What we learned (latest live run, 2026-10-04)
+
+- **The demo corpus is easy for real embeddings.**
+  - Vector search found an expected chunk in the top 5 for all 86 answerable questions, in all
+    three languages.
+  - Keyword search alone manages 0.36 on Bengali script, so hybrid search is worth keeping.
+  - With about 60 chunks per tenant these numbers are near the ceiling. They will drop with
+    real catalogues.
+- **The relevance threshold can't separate everything.**
+  - At 0.65, 6 of 14 unanswerable questions pass the gate: plausible items the shop doesn't sell
+    ("Mutton Rogan Josh", pizza, jewellery, a Kolkata branch).
+  - At 0.70 only 2 pass, but 6 typo or Banglish questions get blocked.
+  - The two groups overlap (0.65–0.72), so 0.65 stays. The model's own "not in the sources"
+    rule handles what passes.
+- **Gemini 3.8 Flash is a poor first fallback.**
+  - It returned 503 (overloaded) twice in 5 calls, and its first event took 2.7 to 13 s.
+  - Gemini 3.6 Flash answered all 5 in 1.5 to 2.3 s.
+  - The 3 s failover window fits 3.6 but not 3.8: putting 3.6 first is recommended, not yet
+    changed.
+- **The known failures were real.**
+  - The invented delivery estimate appeared in 1 of 4 live runs; it is now blocked in code.
+  - After a hand-back, the model handed the chat back to the team instead of repeating the
+    staff message's deadline. Staff messages are now citable sources and it answers from them
+    (verified once live).
+- **One open failure:** asked in Bengali how long a refund takes, the model did not search and
+  said it had no information. The returns policy says 5 working days.
+
 ## Multi-tenancy
 
 Every request is authenticated with `Authorization: Bearer <key>`. A key belongs to one tenant

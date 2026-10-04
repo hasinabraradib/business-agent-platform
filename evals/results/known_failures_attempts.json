@@ -1,0 +1,104 @@
+{
+ "_note": "Live attempts after the first fix (staff messages as sources), before the handoff guidance was tightened.",
+ "known-staff-detail (first fix)": {
+  "status": "done",
+  "category": "known_failure",
+  "passed": false,
+  "checks": [
+   {
+    "check": "keeps the 6 pm deadline",
+    "passed": false,
+    "reason": "no match for /6\\s*pm|6 ?ta|৬ ?টা/"
+   },
+   {
+    "check": "keeps Thursday",
+    "passed": false,
+    "reason": "no match for /thursday|brihoshpoti|বৃহস্পতি/"
+   },
+   {
+    "check": "still not confirmed",
+    "passed": false,
+    "reason": "no match for /not (yet )?confirmed|isn't confirmed|not been confirmed|unconfirmed|confirmed yet/"
+   },
+   {
+    "check": "not labelled no_answer",
+    "passed": true,
+    "reason": "outcome ['handoff']"
+   }
+  ],
+  "transcript": {
+   "case_id": "known-staff-detail",
+   "tenant": "restaurant",
+   "conversation_id": "37233c23-0133-49f9-9ed1-805d990d5d9f",
+   "turns": [
+    {
+     "say": "I want to talk to a real person",
+     "reply": "I've passed this to our team. They're offline right now and back today at 12 pm; they'll reply here as soon as they can.",
+     "outcome": "handoff",
+     "status": "waiting_human",
+     "silent": false,
+     "tools": [
+      {
+       "step": 1,
+       "tool": "request_human",
+       "result": "Handed to the team. Write nothing more.",
+       "status": "ok",
+       "summary": "handed to the team",
+       "arguments": {
+        "reason": "customer wants to talk to a real person"
+       }
+      }
+     ],
+     "citations": [],
+     "ttft_s": 0.8578172500128858,
+     "total_s": 0.8675385419919621,
+     "model": "openai_compat:openai/gpt-oss-120b",
+     "prompt_tokens": 2790,
+     "completion_tokens": 46,
+     "model_calls": 1,
+     "error": null,
+     "unsupported": []
+    },
+    {
+     "say": "So is my table for 15 confirmed now?",
+     "reply": "I've passed this to our team. They're offline right now and back today at 12 pm; they'll reply here as soon as they can.",
+     "outcome": "handoff",
+     "status": "waiting_human",
+     "silent": false,
+     "tools": [
+      {
+       "step": 1,
+       "tool": "request_human",
+       "result": "Handed to the team. Write nothing more.",
+       "status": "ok",
+       "summary": "handed to the team",
+       "arguments": {
+        "reason": "customer asks to confirm reservation"
+       }
+      }
+     ],
+     "citations": [],
+     "ttft_s": 0.6611489169881679,
+     "total_s": 0.6685766250011511,
+     "model": "openai_compat:openai/gpt-oss-120b",
+     "prompt_tokens": 3015,
+     "completion_tokens": 56,
+     "model_calls": 1,
+     "error": null,
+     "unsupported": []
+    }
+   ],
+   "staff_messages": [
+    "Hi, this is Rumana. I have noted a table for 15 on Friday at 8 pm, but it is not confirmed yet: please call 01700-000000 before 6 pm on Thursday to confirm it."
+   ],
+   "facts": {
+    "reservations": 0,
+    "leads": 0
+   },
+   "stopped": null
+  },
+  "requests": 2,
+  "tokens": 5907,
+  "finished_at": "2026-10-04"
+ }
+}

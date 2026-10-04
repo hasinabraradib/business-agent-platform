@@ -1,0 +1,255 @@
+{
+ "known-order-estimate": {
+  "status": "done",
+  "category": "known_failure",
+  "passed": false,
+  "checks": [
+   {
+    "check": "tool_called",
+    "passed": true,
+    "reason": "lookup_order ok called"
+   },
+   {
+    "check": "tool_args",
+    "passed": false,
+    "reason": "no lookup_order call with order_number"
+   },
+   {
+    "check": "tool_args",
+    "passed": false,
+    "reason": "no lookup_order call with phone_last4"
+   },
+   {
+    "check": "every order fact from the tool result",
+    "passed": false,
+    "reason": "unsupported: ['status: shipped']"
+   },
+   {
+    "check": "no invented delivery estimate",
+    "passed": true,
+    "reason": "no forbidden text"
+   }
+  ],
+  "transcript": {
+   "case_id": "known-order-estimate",
+   "tenant": "shop",
+   "conversation_id": "59928b3c-6e41-4f77-bd7f-1eedda2fb42b",
+   "turns": [
+    {
+     "say": "Where is my order JL-10232? The last 4 digits of my phone are 6543",
+     "reply": "Your order JL-10232 is currently shipped and on its way via Steadfast.",
+     "outcome": "answered",
+     "status": "ai",
+     "silent": false,
+     "tools": [
+      {
+       "step": 1,
+       "tool": "lookup_order",
+       "status": "ok",
+       "summary": "found (shipped)"
+      }
+     ],
+     "citations": [],
+     "ttft_s": 1.313670417002868,
+     "total_s": 1.3671223749988712,
+     "model": "openai_compat:openai/gpt-oss-120b",
+     "prompt_tokens": 4921,
+     "completion_tokens": 76,
+     "model_calls": 2,
+     "error": null,
+     "unsupported": [
+      "status: shipped"
+     ]
+    }
+   ],
+   "staff_messages": [],
+   "facts": {
+    "reservations": 0,
+    "leads": 0
+   },
+   "stopped": null
+  },
+  "requests": 2,
+  "tokens": 4997,
+  "finished_at": "2026-10-04"
+ },
+ "known-staff-detail": {
+  "status": "done",
+  "category": "known_failure",
+  "passed": false,
+  "checks": [
+   {
+    "check": "keeps the 6 pm deadline",
+    "passed": false,
+    "reason": "no match for /6\\s*pm|6 ?ta|৬ ?টা/"
+   },
+   {
+    "check": "keeps Thursday",
+    "passed": false,
+    "reason": "no match for /thursday|brihoshpoti|বৃহস্পতি/"
+   },
+   {
+    "check": "still not confirmed",
+    "passed": false,
+    "reason": "no match for /not (yet )?confirmed|isn't confirmed|not been confirmed|unconfirmed|confirmed yet/"
+   },
+   {
+    "check": "not labelled no_answer",
+    "passed": true,
+    "reason": "outcome ['handoff']"
+   }
+  ],
+  "transcript": {
+   "case_id": "known-staff-detail",
+   "tenant": "restaurant",
+   "conversation_id": "d8225c2c-6af3-4d7b-aa73-5797c08786c8",
+   "turns": [
+    {
+     "say": "I want to talk to a real person",
+     "reply": "I've passed this to our team. They're offline right now and back today at 12 pm; they'll reply here as soon as they can.",
+     "outcome": "handoff",
+     "status": "waiting_human",
+     "silent": false,
+     "tools": [
+      {
+       "step": 1,
+       "tool": "request_human",
+       "status": "ok",
+       "summary": "handed to the team"
+      }
+     ],
+     "citations": [],
+     "ttft_s": 0.7458871669950895,
+     "total_s": 0.7531685419962741,
+     "model": "openai_compat:openai/gpt-oss-120b",
+     "prompt_tokens": 2729,
+     "completion_tokens": 41,
+     "model_calls": 1,
+     "error": null,
+     "unsupported": []
+    },
+    {
+     "say": "So is my table for 15 confirmed now?",
+     "reply": "I've passed this to our team. They're offline right now and back today at 12 pm; they'll reply here as soon as they can.",
+     "outcome": "handoff",
+     "status": "waiting_human",
+     "silent": false,
+     "tools": [
+      {
+       "step": 1,
+       "tool": "request_human",
+       "status": "ok",
+       "summary": "handed to the team"
+      }
+     ],
+     "citations": [],
+     "ttft_s": 0.741913250007201,
+     "total_s": 0.7476157910132315,
+     "model": "openai_compat:openai/gpt-oss-120b",
+     "prompt_tokens": 2846,
+     "completion_tokens": 48,
+     "model_calls": 1,
+     "error": null,
+     "unsupported": []
+    }
+   ],
+   "staff_messages": [
+    "Hi, this is Rumana. I have noted a table for 15 on Friday at 8 pm, but it is not confirmed yet: please call 01700-000000 before 6 pm on Thursday to confirm it."
+   ],
+   "facts": {
+    "reservations": 0,
+    "leads": 0
+   },
+   "stopped": null
+  },
+  "requests": 2,
+  "tokens": 5664,
+  "finished_at": "2026-10-04"
+ },
+ "known-cancel-order": {
+  "status": "done",
+  "category": "known_failure",
+  "passed": true,
+  "checks": [
+   {
+    "check": "does not collect details",
+    "passed": true,
+    "reason": "no forbidden text"
+   },
+   {
+    "check": "does not claim a cancellation",
+    "passed": true,
+    "reason": "no forbidden text"
+   },
+   {
+    "check": "hands off or refuses",
+    "passed": true,
+    "reason": "request_human  called | no match for /can'?t|cannot|not able|unable|parbo na|সম্ভব নয়|পারব না/"
+   }
+  ],
+  "transcript": {
+   "case_id": "known-cancel-order",
+   "tenant": "restaurant",
+   "conversation_id": "16e2d4a3-5c4f-4d6a-af14-5200e17484fe",
+   "turns": [
+    {
+     "say": "can you cancel my order from last week?",
+     "reply": "I've passed this to our team. They're offline right now and back today at 12 pm; they'll reply here as soon as they can.",
+     "outcome": "handoff",
+     "status": "waiting_human",
+     "silent": false,
+     "tools": [
+      {
+       "step": 1,
+       "tool": "request_human",
+       "status": "ok",
+       "summary": "handed to the team"
+      }
+     ],
+     "citations": [],
+     "ttft_s": 0.8109313749882858,
+     "total_s": 0.8186287499847822,
+     "model": "openai_compat:openai/gpt-oss-120b",
+     "prompt_tokens": 2722,
+     "completion_tokens": 49,
+     "model_calls": 1,
+     "error": null,
+     "unsupported": []
+    }
+   ],
+   "staff_messages": [],
+   "facts": {
+    "reservations": 0,
+    "leads": 0
+   },
+   "stopped": null
+  },
+  "requests": 1,
+  "tokens": 2771,
+  "finished_at": "2026-10-04"
+ },
+ "_note": "Known failures before the fixes (2026-10-04). known-order-estimate ran on an API build that did not yet record tool results, so its argument and groundedness checks are void; it is re-run below as known-order-estimate (rebuilt).",
+ "known-order-estimate (rebuilt)": {
+  "status": "done",
+  "passed": true,
+  "note": "Re-run on an API build that records tool results, before the fixes (2026-10-04). Reconstructed from the run output: the state entry was cleared by mistake before it was copied here.",
+  "reply": "Your order JL-10232 is shipped and on its way via Steadfast.",
+  "tool": {
+   "tool": "lookup_order",
+   "status": "ok",
+   "arguments": {
+    "phone_last4": "6543",
+    "order_number": "JL-10232"
+   }
+  },
+  "checks": [
+   "PASS tool_called",
+   "PASS tool_args order_number",
+   "PASS tool_args phone_last4",
+   "PASS every order fact from the tool result",
+   "PASS no invented delivery estimate"
+  ],
+  "requests": 2,
+  "tokens": 5012
+ }
+}

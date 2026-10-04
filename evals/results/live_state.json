@@ -1,0 +1,516 @@
+{
+ "cases": {
+  "known-order-estimate": {
+   "status": "done",
+   "category": "known_failure",
+   "passed": true,
+   "checks": [
+    {
+     "check": "tool_called",
+     "passed": true,
+     "reason": "lookup_order ok called"
+    },
+    {
+     "check": "tool_args",
+     "passed": true,
+     "reason": "order_number=['JL-10232']"
+    },
+    {
+     "check": "tool_args",
+     "passed": true,
+     "reason": "phone_last4=['6543']"
+    },
+    {
+     "check": "every order fact from the tool result",
+     "passed": true,
+     "reason": "all claims supported"
+    },
+    {
+     "check": "no invented delivery estimate",
+     "passed": true,
+     "reason": "no forbidden text"
+    }
+   ],
+   "transcript": {
+    "case_id": "known-order-estimate",
+    "tenant": "shop",
+    "conversation_id": "556a218e-0f94-4acc-96e8-952c675cce3d",
+    "turns": [
+     {
+      "say": "Where is my order JL-10232? The last 4 digits of my phone are 6543",
+      "reply": "Your order JL-10232 is shipped and on its way via Steadfast.",
+      "outcome": "answered",
+      "status": "ai",
+      "silent": false,
+      "tools": [
+       {
+        "step": 1,
+        "tool": "lookup_order",
+        "result": "<tool-result-c95daab0>\nOrder JL-10232: status shipped; items: 1 x Half-silk Jamdani Saree; total BDT 12500.00; placed 30 Sep 2026, shipped 02 Oct 2026; courier: Steadfast.\n</tool-result-c95daab0>",
+        "status": "ok",
+        "summary": "found (shipped)",
+        "arguments": {
+         "phone_last4": "6543",
+         "order_number": "JL-10232"
+        }
+       }
+      ],
+      "citations": [],
+      "ttft_s": 1.4735416669864208,
+      "total_s": 1.4805327919893898,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 5041,
+      "completion_tokens": 71,
+      "model_calls": 2,
+      "error": null,
+      "unsupported": []
+     }
+    ],
+    "staff_messages": [],
+    "facts": {
+     "reservations": 0,
+     "leads": 0
+    },
+    "stopped": null
+   },
+   "requests": 2,
+   "tokens": 5112,
+   "finished_at": "2026-10-04"
+  },
+  "known-cancel-order": {
+   "status": "done",
+   "category": "known_failure",
+   "passed": true,
+   "checks": [
+    {
+     "check": "does not collect details",
+     "passed": true,
+     "reason": "no forbidden text"
+    },
+    {
+     "check": "does not claim a cancellation",
+     "passed": true,
+     "reason": "no forbidden text"
+    },
+    {
+     "check": "hands off or refuses",
+     "passed": true,
+     "reason": "request_human  called | no match for /can'?t|cannot|not able|unable|parbo na|সম্ভব নয়|পারব না/"
+    }
+   ],
+   "transcript": {
+    "case_id": "known-cancel-order",
+    "tenant": "restaurant",
+    "conversation_id": "4b92ece9-9a25-4d88-9186-56e2e5826ec3",
+    "turns": [
+     {
+      "say": "can you cancel my order from last week?",
+      "reply": "I've passed this to our team. They're offline right now and back today at 12 pm; they'll reply here as soon as they can.",
+      "outcome": "handoff",
+      "status": "waiting_human",
+      "silent": false,
+      "tools": [
+       {
+        "step": 1,
+        "tool": "request_human",
+        "result": "Handed to the team. Write nothing more.",
+        "status": "ok",
+        "summary": "handed to the team",
+        "arguments": {
+         "reason": "order cancellation request"
+        }
+       }
+      ],
+      "citations": [],
+      "ttft_s": 1.0903797920036595,
+      "total_s": 1.1017390420020092,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 2790,
+      "completion_tokens": 67,
+      "model_calls": 1,
+      "error": null,
+      "unsupported": []
+     }
+    ],
+    "staff_messages": [],
+    "facts": {
+     "reservations": 0,
+     "leads": 0
+    },
+    "stopped": null
+   },
+   "requests": 1,
+   "tokens": 2857,
+   "finished_at": "2026-10-04"
+  },
+  "known-staff-detail": {
+   "status": "done",
+   "category": "known_failure",
+   "passed": true,
+   "checks": [
+    {
+     "check": "keeps the 6 pm deadline",
+     "passed": true,
+     "reason": "matches"
+    },
+    {
+     "check": "keeps Thursday",
+     "passed": true,
+     "reason": "matches"
+    },
+    {
+     "check": "still not confirmed",
+     "passed": true,
+     "reason": "matches"
+    },
+    {
+     "check": "not labelled no_answer",
+     "passed": true,
+     "reason": "outcome ['answered']"
+    }
+   ],
+   "transcript": {
+    "case_id": "known-staff-detail",
+    "tenant": "restaurant",
+    "conversation_id": "d2fe624e-279e-41bf-beb5-4e472fcd5fff",
+    "turns": [
+     {
+      "say": "I want to talk to a real person",
+      "reply": "I've passed this to our team. They're offline right now and back today at 12 pm; they'll reply here as soon as they can.",
+      "outcome": "handoff",
+      "status": "waiting_human",
+      "silent": false,
+      "tools": [
+       {
+        "step": 1,
+        "tool": "request_human",
+        "result": "Handed to the team. Write nothing more.",
+        "status": "ok",
+        "summary": "handed to the team",
+        "arguments": {
+         "reason": "customer wants to talk to a real person"
+        }
+       }
+      ],
+      "citations": [],
+      "ttft_s": 0.8320323750085663,
+      "total_s": 0.8399738750013057,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 2828,
+      "completion_tokens": 41,
+      "model_calls": 1,
+      "error": null,
+      "unsupported": []
+     },
+     {
+      "say": "So is my table for 15 confirmed now?",
+      "reply": "Your table for 15 is still not confirmed; please call 01700-000000 before 6 pm on Thursday to confirm it [1].",
+      "outcome": "answered",
+      "status": "ai",
+      "silent": false,
+      "tools": [],
+      "citations": [
+       "85c3e96f-70cb-4e18-a922-12bd251db05b"
+      ],
+      "ttft_s": 0.7991328749922104,
+      "total_s": 0.8737372090108693,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 3057,
+      "completion_tokens": 65,
+      "model_calls": 1,
+      "error": null,
+      "unsupported": []
+     }
+    ],
+    "staff_messages": [
+     "Hi, this is Rumana. I have noted a table for 15 on Friday at 8 pm, but it is not confirmed yet: please call 01700-000000 before 6 pm on Thursday to confirm it."
+    ],
+    "facts": {
+     "reservations": 0,
+     "leads": 0
+    },
+    "stopped": null
+   },
+   "requests": 2,
+   "tokens": 5991,
+   "finished_at": "2026-10-04"
+  },
+  "bn-friday-hours": {
+   "status": "done",
+   "category": "language",
+   "passed": true,
+   "checks": [
+    {
+     "check": "tool_called",
+     "passed": true,
+     "reason": "search_knowledge  called"
+    },
+    {
+     "check": "grounded",
+     "passed": true,
+     "reason": "all claims supported"
+    },
+    {
+     "check": "script",
+     "passed": true,
+     "reason": "script as expected"
+    },
+    {
+     "check": "no request_human",
+     "passed": true,
+     "reason": "not called"
+    }
+   ],
+   "transcript": {
+    "case_id": "bn-friday-hours",
+    "tenant": "restaurant",
+    "conversation_id": "d3faf469-d676-4ac6-9355-53e0ad1c8a73",
+    "turns": [
+     {
+      "say": "শুক্রবার আপনারা কখন খোলেন?",
+      "reply": "শুক্রবার আমরা দুপুর 2:30 টা থেকে খুলি এবং রাত 11 টা পর্যন্ত খোলা থাকে [1]।",
+      "outcome": "answered",
+      "status": "ai",
+      "silent": false,
+      "tools": [
+       {
+        "step": 1,
+        "tool": "search_knowledge",
+        "result": "<search-results-08f8a85d>\n[1] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন) > Opening hours)\nWe are open every day from 12:00 noon to 11:00 pm. On Fridays we open at 2:30 pm, after Jumu'ah\nprayers. The kitchen takes its last orders at 10:30 pm.\n\nDuring Ramadan we open at 4:00 pm and serve an iftar platter from sunset; we close at 11:30 pm.\nWe are closed on the first day of Eid-ul-Fitr and Eid-ul-Adha.\n\n[2] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন) > Reservations)\nYou can reserve a table by calling 01700-000000 between 11 am and 10 pm. We hold a reservation\nfor 15 minutes after the booked time. Groups of eight or more must pay a deposit of 1,000 BDT,\nwhich is deducted from the bill; the deposit is refunded if you cancel at least 24 hours ahead.\nWe do not take reservations for Friday lunch; seating is first come, first served.\n\n[3] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন))\nNodi Kitchen serves home-style Bengali food in Dhanmondi, Dhaka. Our kitchen cooks with mustard\noil, fresh river fish and spices ground in-house every morning.\n\n[4] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন) > Frequently asked questions > Is the food halal?)\nYes. All meat and poultry is halal, and we do not serve alcohol or pork.\n\n[5] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন) > Frequently asked questions > Do you deliver?)\nWe deliver within 5 km of the restaurant through our own riders, from 1 pm to 10 pm. Orders over\n1,500 BDT get free delivery; otherwise delivery costs 60 BDT.\n\n[6] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন) > Frequently asked questions > জন্মদিন বা অনুষ্ঠানের জন্য কি জায়গা পাওয়া যায়?)\nআমাদের একটি আলাদা কক্ষে সর্বোচ্চ ২০ জন বসতে পারেন। অন্তত তিন দিন আগে বুকিং দিতে হবে।\n\n[7] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন) > Frequently asked questions > Can you adjust the spice level?)\nMost curries can be made milder on request. Shorshe Ilish and Beef Kala Bhuna are traditionally\nhot and cannot be made fully mild. Tell your server about allergies; our kitchen handles nuts,\ndairy, shellfish and mustard, so we cannot guarantee that any dish is free of traces.\n\n[8] Nodi Kitchen: hours, location, reservations and FAQ (Nodi Kitchen (নদী কিচেন) > Location and parking)\nHouse 27, Road 9/A, Dhanmondi, Dhaka 1209. We are on the first floor, above a pharmacy; there is\na lift. Limited parking for six cars is available in front of the building after 6 pm. The\nnearest landmark is the Dhanmondi Lake footbridge, about five minutes on foot.\n</search-results-08f8a85d>\nCite each fact you use with its number in square brackets right after it, e.g. [1].",
+        "status": "ok",
+        "summary": "8 relevant passages",
+        "arguments": {
+         "query": "Friday opening hours Nodi Kitchen"
+        }
+       }
+      ],
+      "citations": [
+       "03fa0885-b633-4e29-98a5-69bced4b5a1f"
+      ],
+      "ttft_s": 1.7371289580187295,
+      "total_s": 2.0771178750146646,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 6471,
+      "completion_tokens": 77,
+      "model_calls": 2,
+      "error": null,
+      "unsupported": []
+     }
+    ],
+    "staff_messages": [],
+    "facts": {
+     "reservations": 0,
+     "leads": 0
+    },
+    "stopped": null
+   },
+   "requests": 2,
+   "tokens": 6548,
+   "finished_at": "2026-10-04"
+  },
+  "bn-kacchi-price": {
+   "status": "done",
+   "category": "language",
+   "passed": true,
+   "checks": [
+    {
+     "check": "grounded",
+     "passed": true,
+     "reason": "all claims supported"
+    },
+    {
+     "check": "reply_matches",
+     "passed": true,
+     "reason": "matches"
+    },
+    {
+     "check": "script",
+     "passed": true,
+     "reason": "script as expected"
+    }
+   ],
+   "transcript": {
+    "case_id": "bn-kacchi-price",
+    "tenant": "restaurant",
+    "conversation_id": "63afafb9-7197-4181-91c6-16921c4020f7",
+    "turns": [
+     {
+      "say": "কাচ্চি বিরিয়ানির দাম কত?",
+      "reply": "কাচ্চি বিরিয়ানির দাম ৪৮০ টাকা [1]।",
+      "outcome": "answered",
+      "status": "ai",
+      "silent": false,
+      "tools": [
+       {
+        "step": 1,
+        "tool": "search_knowledge",
+        "result": "<search-results-84565bfe>\n[1] Nodi Kitchen menu (row 1)\ndish_en: Kacchi Biryani (Mutton)\ndish_bn: কাচ্চি বিরিয়ানি (খাসি)\ncategory: Rice\nprice_bdt: 480\nspice_level: Medium\nallergens: Dairy, Nuts\nvegetarian: No\ndescription: Slow-cooked basmati rice layered with marinated mutton, potato and saffron, sealed and cooked in a handi.\n\n[2] Nodi Kitchen menu (row 3)\ndish_en: Bhuna Khichuri\ndish_bn: ভুনা খিচুড়ি\ncategory: Rice\nprice_bdt: 260\nspice_level: Medium\nallergens: Dairy\nvegetarian: Yes\ndescription: Rice and moong dal roasted with ghee and spices. A rainy-day favourite.\n\n[3] Nodi Kitchen menu (row 2)\ndish_en: Morog Polao\ndish_bn: মোরগ পোলাও\ncategory: Rice\nprice_bdt: 380\nspice_level: Mild\nallergens: Dairy, Nuts\nvegetarian: No\ndescription: Fragrant chinigura rice cooked with chicken, ghee and whole spices, served with a boiled egg.\n\n[4] Nodi Kitchen menu (row 14)\ndish_en: Borhani\ndish_bn: বোরহানি\ncategory: Drinks\nprice_bdt: 90\nspice_level: Mild\nallergens: Dairy\nvegetarian: Yes\ndescription: Spiced yoghurt drink with mint and black salt. Traditional with biryani.\n\n[5] Nodi Kitchen menu (row 12)\ndish_en: Plain Rice\ndish_bn: সাদা ভাত\ncategory: Sides\nprice_bdt: 60\nspice_level: None\nallergens: None\nvegetarian: Yes\ndescription: Steamed white rice.\n\n[6] Nodi Kitchen menu (row 13)\ndish_en: Paratha\ndish_bn: পরোটা\ncategory: Sides\nprice_bdt: 40\nspice_level: None\nallergens: Gluten, Dairy\nvegetarian: Yes\ndescription: Flaky layered flatbread, per piece.\n\n[7] Nodi Kitchen menu (row 7)\ndish_en: Beef Kala Bhuna\ndish_bn: গরুর কালা ভুনা\ncategory: Meat\nprice_bdt: 450\nspice_level: Hot\nallergens: None\nvegetarian: No\ndescription: Chattogram-style beef slow-cooked until dark and dry with roasted spices.\n\n[8] Nodi Kitchen menu (row 16)\ndish_en: Mango Lassi\ndish_bn: আমের লাচ্ছি\ncategory: Drinks\nprice_bdt: 150\nspice_level: None\nallergens: Dairy\nvegetarian: Yes\ndescription: Seasonal; made with Rajshahi mangoes when available.\n</search-results-84565bfe>\nCite each fact you use with its number in square brackets right after it, e.g. [1].",
+        "status": "ok",
+        "summary": "8 relevant passages",
+        "arguments": {
+         "query": "কাচ্চি বিরিয়ানির দাম"
+        }
+       }
+      ],
+      "citations": [
+       "c95bf27c-79dc-4ae4-b4bc-f861b9e456dd"
+      ],
+      "ttft_s": 2.264775916992221,
+      "total_s": 2.319595875014784,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 6327,
+      "completion_tokens": 63,
+      "model_calls": 2,
+      "error": null,
+      "unsupported": []
+     }
+    ],
+    "staff_messages": [],
+    "facts": {
+     "reservations": 0,
+     "leads": 0
+    },
+    "stopped": null
+   },
+   "requests": 2,
+   "tokens": 6390,
+   "finished_at": "2026-10-04"
+  },
+  "bn-delivery-charge": {
+   "status": "done",
+   "category": "language",
+   "passed": true,
+   "checks": [
+    {
+     "check": "grounded",
+     "passed": true,
+     "reason": "all claims supported"
+    },
+    {
+     "check": "reply_matches",
+     "passed": true,
+     "reason": "matches"
+    },
+    {
+     "check": "script",
+     "passed": true,
+     "reason": "script as expected"
+    }
+   ],
+   "transcript": {
+    "case_id": "bn-delivery-charge",
+    "tenant": "shop",
+    "conversation_id": "d1dba2e0-19e1-4e21-9acb-a39c8978a141",
+    "turns": [
+     {
+      "say": "ঢাকার ভেতরে ডেলিভারি চার্জ কত?",
+      "reply": "ঢাকার ভেতরে ডেলিভারি চার্জ ৭০ টাকা [2]।",
+      "outcome": "answered",
+      "status": "ai",
+      "silent": false,
+      "tools": [
+       {
+        "step": 1,
+        "tool": "search_knowledge",
+        "result": "<search-results-2d49ccc6>\n[1] Frequently asked questions (Frequently asked questions > আপনারা কি ঢাকার বাইরে ক্যাশ অন ডেলিভারি দেন?)\nহ্যাঁ, সারা বাংলাদেশে ১৫,০০০ টাকা পর্যন্ত অর্ডারে ক্যাশ অন ডেলিভারি সুবিধা আছে।\n\n[2] Shipping (Shipping > Delivery times and charges)\n| Area | Time | Charge |\n| --- | --- | --- |\n| Inside Dhaka city | 1–2 working days | 70 BDT |\n| Dhaka suburbs (Savar, Gazipur, Narayanganj) | 2–3 working days | 100 BDT |\n| Rest of Bangladesh | 3–5 working days | 130 BDT |\n\nOrders over 5,000 BDT ship free anywhere in Bangladesh. Made-to-order items ship in 10–14 days.\n\n[3] Shipping (Shipping > Cash on delivery)\nCash on delivery is available for orders up to 15,000 BDT. For larger orders, or for sarees above\n10,000 BDT, we ask for an advance payment of 50% by bKash or card.\n\n[4] Shipping (Shipping > Couriers and tracking)\nWe use Pathao and Steadfast inside Bangladesh. You receive an SMS with a tracking link when your\nparcel leaves the studio.\n\n[5] Shipping (Shipping)\nJamdani Lane ships from our studio in Mirpur, Dhaka. Orders placed before 2 pm (Saturday to\nThursday) are packed the same day.\n\n[6] Shipping (Shipping > International shipping)\nWe ship to India, the UK, the USA, Canada and the Middle East by DHL Express, usually in 5–8\nworking days. International charges are calculated at checkout by weight. Customs duties and\ntaxes in the destination country are paid by the customer.\n\n[7] Returns and refunds (Returns and refunds > How refunds work)\nOnce we receive and check the returned item, we refund within 5 working days. Payments made by\nbKash or Nagad are refunded to the same number; card payments go back to the card and may take\nup to 10 days to appear. Cash-on-delivery orders are refunded by bKash. The original delivery\ncharge is not refunded for change-of-mind returns.\n\n[8] Jamdani Lane product catalogue (row 1)\nsku: JL-SAR-001\nname: Dhakai Jamdani Saree – Classic Motif\ncategory: Sarees\nprice_bdt: 18500\nmaterial: Cotton jamdani (handloom)\ncolors: Off-white with red, Black with gold\nstock_status: In stock\ndescription: Woven by hand in Rupganj over about three weeks. 5.5 m with a 0.8 m blouse piece.\n</search-results-2d49ccc6>\nCite each fact you use with its number in square brackets right after it, e.g. [1].",
+        "status": "ok",
+        "summary": "8 relevant passages",
+        "arguments": {
+         "query": "ঢাকা ডেলিভারি চার্জ"
+        }
+       }
+      ],
+      "citations": [
+       "04b9793c-744b-496e-a259-d48748fbcf15"
+      ],
+      "ttft_s": 2.2492219590058085,
+      "total_s": 2.30869958398398,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 5643,
+      "completion_tokens": 69,
+      "model_calls": 2,
+      "error": null,
+      "unsupported": []
+     }
+    ],
+    "staff_messages": [],
+    "facts": {
+     "reservations": 0,
+     "leads": 0
+    },
+    "stopped": null
+   },
+   "requests": 2,
+   "tokens": 5712,
+   "finished_at": "2026-10-04"
+  },
+  "bn-refund-time": {
+   "status": "done",
+   "category": "language",
+   "passed": false,
+   "checks": [
+    {
+     "check": "grounded",
+     "passed": true,
+     "reason": "all claims supported"
+    },
+    {
+     "check": "reply_matches",
+     "passed": false,
+     "reason": "no match for /\\b5\\b|৫/"
+    },
+    {
+     "check": "script",
+     "passed": true,
+     "reason": "script as expected"
+    }
+   ],
+   "transcript": {
+    "case_id": "bn-refund-time",
+    "tenant": "shop",
+    "conversation_id": "cbdc3e03-f160-4c2a-b337-b0b1a3dcf6a6",
+    "turns": [
+     {
+      "say": "রিফান্ড পেতে কত দিন লাগে?",
+      "reply": "রিফান্ড পেতে কত দিন লাগে তা আমাদের কাছে সুনির্দিষ্ট তথ্য নেই। দয়া করে WhatsApp বা কল 01800-000000 (সকাল ১০টা থেকে সন্ধ্যা ৭টা, শনিবার-বৃহস্পতিবার) অথবা ইমেইল hello@jamdanilane.example এ যোগাযোগ করুন।",
+      "outcome": "no_answer",
+      "status": "ai",
+      "silent": false,
+      "tools": [],
+      "citations": [],
+      "ttft_s": 0.7951532500155736,
+      "total_s": 0.952007208019495,
+      "model": "openai_compat:openai/gpt-oss-120b",
+      "prompt_tokens": 2484,
+      "completion_tokens": 109,
+      "model_calls": 1,
+      "error": null,
+      "unsupported": []
+     }
+    ],
+    "staff_messages": [],
+    "facts": {
+     "reservations": 0,
+     "leads": 0
+    },
+    "stopped": null
+   },
+   "requests": 1,
+   "tokens": 2593,
+   "finished_at": "2026-10-04"
+  }
+ },
+ "usage": {
+  "2026-10-04": {
+   "requests": 56,
+   "tokens": 149554
+  }
+ },
+ "stops": [
+  {
+   "date": "2026-10-04",
+   "case": "-",
+   "why": "ledger seeded with the 35 requests / ~90,000 tokens used earlier today by the manual verification run"
+  }
+ ]
+}

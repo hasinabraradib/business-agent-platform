@@ -1,0 +1,96 @@
+name: Live evaluation
+
+# Manual only: real providers, budgeted and resumable (see evals/README.md). Never automatic.
+on:
+  workflow_dispatch:
+    inputs:
+      max_cases:
+        description: "Chat cases to run this time (pending ones only)"
+        default: "25"
+      skip_retrieval:
+        description: "Skip the retrieval comparison (true/false)"
+        default: "false"
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write .env from secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_COMPAT_API_KEY: ${{ secrets.OPENAI_COMPAT_API_KEY }}
+          OPENAI_COMPAT_BASE_URL: ${{ secrets.OPENAI_COMPAT_BASE_URL }}
+          OPENAI_COMPAT_MODEL: ${{ secrets.OPENAI_COMPAT_MODEL }}
+        run: |
+          {
+            echo "GEMINI_API_KEY=$GEMINI_API_KEY"
+            echo "OPENAI_COMPAT_API_KEY=$OPENAI_COMPAT_API_KEY"
+            echo "OPENAI_COMPAT_BASE_URL=$OPENAI_COMPAT_BASE_URL"
+            echo "OPENAI_COMPAT_MODEL=$OPENAI_COMPAT_MODEL"
+            echo "OPENAI_COMPAT_REASONING_EFFORT=low"
+            echo "SECRETS_ENCRYPTION_KEY=$(python3 -c 'import os,base64;print(base64.b64encode(os.urandom(32)).decode())')"
+          } > .env
+
+      - name: Start the stack and seed the demo tenants (real embeddings)
+        run: |
+          docker compose up -d --build
+          for i in $(seq 1 60); do curl -sf localhost:8000/health && break; sleep 2; done
+          # seed-demo prints new tenants' keys: never let them reach the log.
+          docker compose run --rm -T migrate python -m app.cli seed-demo | grep -v 'bap_'
+
+      - name: Create admin keys (masked, written to a file)
+        run: |
+          python3 - <<'PY'
+          import json, re, subprocess
+          keys = {}
+          for name, slug in (("restaurant", "demo-restaurant"), ("shop", "demo-shop")):
+              out = subprocess.run(["docker", "compose", "run", "--rm", "-T", "migrate", "python",
+                                    "-m", "app.cli", "create-key", "--tenant", slug, "--kind",
+                                    "admin"], capture_output=True, text=True, check=True).stdout
+              key = re.search(r"bap_admin_[A-Za-z0-9_-]+", out).group(0)
+              print(f"::add-mask::{key}")
+              keys[name] = key
+          json.dump(keys, open("/tmp/eval_keys.json", "w"))
+          PY
+
+      - name: Restore previous live state
+        uses: actions/cache/restore@v4
+        with:
+          path: evals/results
+          key: eval-live-${{ github.run_id }}
+          restore-keys: eval-live-
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Run the live tier
+        working-directory: backend
+        run: |
+          uv sync --frozen
+          set -a; . ../.env; set +a
+          export DATABASE_URL=postgresql+asyncpg://bap_app:bap_app@localhost:5432/app
+          export OWNER_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/app
+          export REDIS_URL=redis://localhost:6379/0
+          extra=""
+          if [ "${{ inputs.skip_retrieval }}" = "true" ]; then extra="--skip-retrieval"; fi
+          uv run python -m evaluation live --keys-file /tmp/eval_keys.json \
+            --max-cases "${{ inputs.max_cases }}" $extra
+          uv run python -m evaluation report >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save live state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: evals/results
+          key: eval-live-${{ github.run_id }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: evals/results/

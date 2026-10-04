@@ -42,7 +42,10 @@ web/widget/           embeddable chat widget (TypeScript, esbuild, no UI framewo
   src/tokens.ts       design tokens: the single source for colours, radii, spacing, shadows
 web/demo/             two static demo sites embedding the widget (served on :8080)
 scripts/demo-setup.sh builds the widget and writes the git-ignored demo page config
-evals/                assistant evaluations; chat_script.py runs scripted chats against a live API
+backend/evaluation/   evaluation suite: retrieval metrics, groundedness, spelling, chat cases,
+                      resumable live runner, report (`python -m evaluation ...`)
+evals/                eval data (data/: labelled questions, chat cases, lexicon), config.json
+                      (CI floors, budgets, prices), results/ (live runs); chat_script.py
 integrations/n8n/     n8n workflow for webhook events (untested end to end)
 demo/                 fictional demo knowledge ingested by `seed-demo`
 ```
@@ -129,6 +132,13 @@ cd web/widget && npm ci && npm run check   # widget: types, lint, tests, build +
   exist.
 - Telegram in tests: swap `app.channels.telegram.CLIENT_FACTORY` for a client over
   `httpx.MockTransport` (see `tests/test_telegram.py`); never call the real Bot API.
+- Evaluation: a failure found with a real model becomes a permanent eval case first (confirm it
+  fails on the current code), then the fix. The deterministic tier (`tests/test_eval_suite.py`)
+  must stay green and must never call a real provider; raise the floors in `evals/config.json`
+  when the system improves, never lower them to make CI pass. The live tier never runs
+  automatically, keeps to the budgets in `evals/config.json`, and a partial run is always
+  labelled partial. Retrieval metrics never call the chat model. Keep question labels honest:
+  label the chunk that really answers the question, never tune questions to the retriever.
 - New chat providers go in `app/llm/` only (subclass + registry entry).
 - Widget: never use `innerHTML`/`insertAdjacentHTML`; build DOM with `createElement` and
   `textContent` (`src/render.ts` for any server or model text, http/https links only). Colours,

@@ -54,6 +54,7 @@ class _Prepared:
     rows: list[Chunk]
     title: str | None = None  # a better title found in the source (web pages)
     content_hash: str | None = None  # for URLs: hash of the fetched body
+    size_bytes: int | None = None  # for URLs: size of the fetched body
     catalog: list[CatalogItem] = field(default_factory=list)  # catalogue CSVs only
 
 
@@ -104,6 +105,8 @@ async def process_document(deps: IngestDeps, tenant_id: uuid.UUID, document_id: 
                 document.title = prepared.title  # replace the URL placeholder title
             if prepared.content_hash:
                 document.content_hash = prepared.content_hash
+            if prepared.size_bytes is not None:
+                document.size_bytes = prepared.size_bytes
             await db.commit()
     except Exception:
         # The swap rolled back as a whole: the previous chunks are still in place.
@@ -121,12 +124,14 @@ async def _prepare(
     title: str,
 ) -> _Prepared:
     content_hash = None
+    size_bytes = None
     if source_type == "url":
         if not source_uri:
             raise ParseError("document has no URL")
         page = await deps.fetch(source_uri)
         parsed: ParsedDocument = parse_fetched(page)
         content_hash = hashlib.sha256(page.body).hexdigest()
+        size_bytes = len(page.body)
     else:
         parsed = parse(source_type, await deps.storage.read(tenant_id, document_id, source_type))
 
@@ -157,7 +162,9 @@ async def _prepare(
         )
         for draft, vector in zip(drafts, vectors, strict=True)
     ]
-    return _Prepared(rows=rows, title=parsed.title, content_hash=content_hash)
+    return _Prepared(
+        rows=rows, title=parsed.title, content_hash=content_hash, size_bytes=size_bytes
+    )
 
 
 async def _catalog_items(

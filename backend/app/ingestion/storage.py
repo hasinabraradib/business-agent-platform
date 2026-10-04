@@ -11,7 +11,7 @@ from pathlib import Path
 
 from app.config import get_settings
 
-EXTENSIONS = {"pdf": "pdf", "markdown": "md", "text": "txt", "csv": "csv"}
+EXTENSIONS = {"pdf": "pdf", "markdown": "md", "text": "txt", "csv": "csv", "html": "html"}
 
 
 class FileStorage:

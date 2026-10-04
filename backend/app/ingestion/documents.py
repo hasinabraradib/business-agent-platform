@@ -17,8 +17,10 @@ UPLOAD_TYPES = {
     ".markdown": "markdown",
     ".txt": "text",
     ".csv": "csv",
+    ".html": "html",
+    ".htm": "html",
 }
-SUPPORTED = "PDF (.pdf), Markdown (.md), plain text (.txt) or CSV (.csv)"
+SUPPORTED = "PDF (.pdf), Markdown (.md), plain text (.txt), CSV (.csv) or HTML (.html)"
 
 
 class UploadRejected(Exception):
@@ -44,7 +46,7 @@ def validate_upload(filename: str, data: bytes) -> str:
         try:
             data.decode("utf-8-sig")
         except UnicodeDecodeError:
-            message = "Text, Markdown and CSV files must be UTF-8 encoded"
+            message = "Text, Markdown, CSV and HTML files must be UTF-8 encoded"
             raise UploadRejected(415, message) from None
     return source_type
 
@@ -81,6 +83,7 @@ async def create_upload_document(
         source_uri=filename,
         content_hash=content_hash,
         catalog_mapping=catalog_mapping,
+        size_bytes=len(data),
     )
     db.add(document)
     try:

@@ -144,6 +144,7 @@ class Document(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     # detect them. NULL: not a catalogue.
     catalog_mapping: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    size_bytes: Mapped[int | None] = mapped_column(Integer)  # uploaded or fetched size
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
@@ -217,6 +218,7 @@ class Conversation(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     customer_name: Mapped[str | None] = mapped_column(String(120))  # Telegram first/last name
     handoff_reason: Mapped[str | None] = mapped_column(Text)
     handoff_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    staff_read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
@@ -253,6 +255,12 @@ class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
             name="messages_outcome_check",
         ),
         Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+        Index(
+            "ix_messages_tenant_open_gaps",
+            "tenant_id",
+            "created_at",
+            postgresql_where=text("outcome = 'no_answer' AND gap_closed_at IS NULL"),
+        ),
     )
 
     conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
@@ -262,6 +270,8 @@ class Message(UUIDPrimaryKey, CreatedAt, TenantOwned, Base):
     citations: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+    # A no_answer reply whose question was answered from the knowledge-gaps screen.
+    gap_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     outcome: Mapped[str | None] = mapped_column(String(16))  # assistant messages only
     model: Mapped[str | None] = mapped_column(String(100))
     prompt_tokens: Mapped[int | None] = mapped_column(Integer)

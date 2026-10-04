@@ -218,6 +218,8 @@ def parse(source_type: str, data: bytes) -> ParsedDocument:
         return parse_markdown(decode_text(data))
     if source_type == "text":
         return parse_text(decode_text(data))
+    if source_type == "html":
+        return parse_html(data)
     if source_type == "csv":
         return parse_csv(decode_text(data))
     raise ParseError(f"unsupported source type: {source_type}")

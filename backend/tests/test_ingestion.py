@@ -463,3 +463,25 @@ async def test_pipeline_embeds_with_title_and_section_prefix(
     assert await run_worker(Capture()) == ["ready"]
     assert [c.title for c in captured] == ["Rosa's FAQ", "Rosa's FAQ"]
     assert captured[0].text.startswith("Rosa's Kitchen > Opening hours\n\nWe are open")
+
+
+async def test_html_upload_is_ingested_and_sizes_are_recorded(client, tenant, deps, job_queue):
+    # The dashboard's knowledge screen accepts HTML files and shows each source's size.
+    html = (
+        b"<html><head><title>Opening hours</title></head>"
+        b"<body><h1>Hours</h1><p>We open at noon every day.</p></body></html>"
+    )
+    response = await client.post(
+        "/v1/documents",
+        headers=bearer(tenant.admin_key),
+        files={"file": ("hours.html", html)},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["source_type"] == "html"
+    assert response.json()["size_bytes"] == len(html)
+    for tenant_id, document_id in job_queue.jobs:
+        assert await process_document(deps, tenant_id, document_id) == "ready"
+    detail = await client.get(
+        f"/v1/documents/{response.json()['id']}", headers=bearer(tenant.admin_key)
+    )
+    assert detail.json()["chunk_count"] >= 1

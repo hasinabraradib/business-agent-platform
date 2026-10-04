@@ -46,6 +46,7 @@ class DocumentOut(ORMModel):
     catalog_mapping: dict[str, Any] | None = None
     status: str
     chunk_count: int
+    size_bytes: int | None = None
     error: str | None
     content_hash: str | None
     created_at: datetime

@@ -38,9 +38,9 @@ export default async function globalSetup() {
   sql(`
     INSERT INTO reservations (tenant_id, conversation_id, reference, starts_at, local_date, local_time, party_size, name, phone, notes, status)
     VALUES
-      ('${tenant}', '${kacchi.conversation_id}', 'R-7KQ2MX', now() + interval '1 day', (now() + interval '1 day')::date, '20:00', 4, 'Rahim Uddin', '01711000111', '', 'confirmed'),
-      ('${tenant}', NULL, 'R-H3WD9P', now() + interval '3 days', (now() + interval '3 days')::date, '13:30', 2, 'Sadia Islam', '01811000222', 'Window seat if possible', 'confirmed');
+      ('${tenant}', '${kacchi.conversation_id}', 'R-7KQ2MX', now() + interval '1 day', (now() + interval '1 day')::date, '20:00', 4, 'Rahim Uddin', '01700000111', '', 'confirmed'),
+      ('${tenant}', NULL, 'R-H3WD9P', now() + interval '3 days', (now() + interval '3 days')::date, '13:30', 2, 'Sadia Islam', '01700000222', 'Window seat if possible', 'confirmed');
     INSERT INTO leads (tenant_id, conversation_id, name, contact, interest, status)
-    VALUES ('${tenant}', '${handoff.conversation_id}', 'Farhana Akter', '01911000333', 'Birthday dinner for 18 people in the private room', 'new');
+    VALUES ('${tenant}', '${handoff.conversation_id}', 'Farhana Akter', '01700000333', 'Birthday dinner for 18 people in the private room', 'new');
   `);
 }

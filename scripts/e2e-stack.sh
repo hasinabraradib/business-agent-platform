@@ -23,7 +23,7 @@ for i in $(seq 1 60); do
 done
 # Demo tenants and documents (hashing embeddings). New tenants' keys are printed by seed-demo:
 # keep them out of the log.
-$compose run --rm -T migrate python -m app.cli seed-demo | grep -v 'bap_' || true
+$compose run --rm --no-deps -T migrate python -m app.cli seed-demo | grep -v 'bap_' || true
 for i in $(seq 1 30); do
   curl -sf "http://localhost:$DASHBOARD_PORT/login" >/dev/null && break
   sleep 2

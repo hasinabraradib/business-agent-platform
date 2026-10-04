@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./helpers";
-import { API, state } from "./stack";
+import { nav, signIn } from "./helpers";
+import { API, chat, deleteDocuments, state } from "./stack";
 
 test.describe.configure({ mode: "serial" });
 
@@ -20,12 +20,14 @@ test("a wrong key is refused in plain language", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Admin API key").fill("bap_admin_thisisnotarealkeyatall1234567890");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("alert")).toContainText("wasn't accepted");
+  await expect(page.locator("#login-error")).toContainText("wasn't accepted");
 });
 
+// Tests that change data make their own first, so the suite can run again on the same stack.
 test("see a conversation, reply as staff, hand back", async ({ page }) => {
+  await chat(state().key, `web-e2e-${Date.now()}`, "I want to talk to a real person");
   await signIn(page);
-  await page.getByRole("link", { name: "Inbox" }).click();
+  await nav(page).getByRole("link", { name: "Inbox" }).click();
   await page.getByRole("button", { name: "Waiting for team" }).click();
   await page.getByRole("link", { name: /Website visitor.*Waiting for team/ }).first().click();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -43,10 +45,14 @@ test("see a conversation, reply as staff, hand back", async ({ page }) => {
 });
 
 test("open a run trace from an assistant reply", async ({ page }) => {
+  const ref = `e2e${Date.now()}`;
+  await chat(state().key, `web-${ref}`, `How much is the Kacchi Biryani? (${ref})`);
   await signIn(page);
-  await page.goto("/inbox?q=Kacchi");
-  await page.getByLabel("Search conversations").fill("Kacchi");
-  await page.getByRole("link", { name: /Website visitor/ }).first().click();
+  await page.goto("/inbox");
+  await page.getByLabel("Search conversations").fill(ref);
+  const match = page.getByRole("link", { name: /Website visitor/ });
+  await expect(match).toHaveCount(1); // the search is debounced
+  await match.click();
   await page.getByRole("link", { name: "View trace" }).first().click();
   await expect(page.getByRole("heading", { name: "Run trace" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Search 1/ })).toBeVisible();
@@ -55,31 +61,37 @@ test("open a run trace from an assistant reply", async ({ page }) => {
 
 test("upload a document and see it indexed", async ({ page }) => {
   await signIn(page);
-  await page.getByRole("link", { name: "Knowledge" }).click();
+  await nav(page).getByRole("link", { name: "Knowledge", exact: true }).click();
+  const name = `e2e-parking-${Date.now()}`;
   await page.getByLabel("Choose files to upload").setInputFiles({
-    name: "e2e-parking.md",
+    name: `${name}.md`,
     mimeType: "text/markdown",
-    buffer: Buffer.from(`# Valet parking\n\nWe offer valet parking on Fridays (run ${Date.now()}).\n`),
+    buffer: Buffer.from(`# Valet parking\n\nWe offer valet parking on Fridays (${name}).\n`),
   });
-  await expect(page.getByRole("cell", { name: /e2e-parking/ })).toBeVisible();
-  await expect(page.getByRole("row", { name: /e2e-parking/ }).getByText("Ready")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("row", { name })).toBeVisible();
+  await expect(page.getByRole("row", { name }).getByText("Ready")).toBeVisible({ timeout: 30_000 });
+  await deleteDocuments(state().key, (title) => title === name);
 });
 
 test("close a knowledge gap with an answer", async ({ page }) => {
+  // A dish nobody has written about yet (each run's name is new, so earlier answers don't match).
+  const dish = `zebu${Date.now().toString(36)}`;
+  await chat(state().key, `web-${dish}`, `Do you serve ${dish} curry?`);
   await signIn(page);
-  await page.getByRole("link", { name: "Knowledge gaps" }).click();
-  const gap = page.getByRole("article").filter({ hasText: /pizza/i }).first();
+  await nav(page).getByRole("link", { name: "Knowledge gaps" }).click();
+  const gap = page.getByRole("article").filter({ hasText: dish });
   await expect(gap).toBeVisible();
   await gap.getByRole("button", { name: "Add an answer" }).click();
-  await page.getByLabel("Answer").fill("We don't serve pizza. Try our Kacchi Biryani instead.");
+  await page.getByLabel("Answer", { exact: true }).fill(`We don't serve ${dish} curry. Try our Kacchi Biryani instead.`);
   await page.getByRole("button", { name: "Save answer" }).click();
   await expect(page.getByRole("status")).toContainText("Added to your knowledge");
-  await expect(page.getByRole("article").filter({ hasText: /pizza/i })).toHaveCount(0);
+  await expect(gap).toHaveCount(0);
+  await deleteDocuments(state().key, (title) => title.includes(dish));
 });
 
 test("change a setting and see it saved", async ({ page }) => {
   await signIn(page);
-  await page.getByRole("link", { name: "Settings" }).click();
+  await nav(page).getByRole("link", { name: "Settings" }).click();
   const promise = page.getByLabel("Reply-time promise");
   await promise.fill("within two hours");
   await page.locator("#business").locator("..").getByRole("button", { name: "Save" }).click();

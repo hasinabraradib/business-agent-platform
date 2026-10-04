@@ -33,7 +33,7 @@ describe("CSV export", () => {
   it("quotes and neutralises spreadsheet formulas", () => {
     expect(csvCell('He said "hi", then left')).toBe('"He said ""hi"", then left"');
     expect(csvCell("=HYPERLINK(\"x\")")).toBe("\"'=HYPERLINK(\"\"x\"\")\"");
-    expect(csvCell("+8801711000111")).toBe("'+8801711000111");
+    expect(csvCell("+8801700000111")).toBe("'+8801700000111");
     expect(toCsv([{ a: 1, b: null }], [{ header: "A", value: (r) => r.a }, { header: "B", value: (r) => r.b }])).toBe("A,B\r\n1,\r\n");
   });
 });

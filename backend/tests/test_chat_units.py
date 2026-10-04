@@ -454,3 +454,22 @@ def test_handoff_guidance_defers_to_an_existing_team_message() -> None:
 
     guidance = RequestHumanTool().guidance(SETTINGS)
     assert 'if a "Message from the team" source already answers the question' in guidance
+
+
+def test_prompt_requires_a_search_for_factual_questions_in_any_script() -> None:
+    # Live, 2026-10-04: "রিফান্ড পেতে কত দিন লাগে?" got "no information" with no search, though
+    # the returns policy says 5 working days. The old rule said "Call search_knowledge only when".
+    prompt = system_prompt(SETTINGS, NOW, "abcd1234")
+    assert "Call search_knowledge only when" not in prompt
+    assert "call search_knowledge before you\n  answer, in whatever language or script" in prompt
+    assert "রিফান্ড পেতে কত দিন লাগে?" in prompt
+    assert "Never say you don't have the information unless a search" in prompt
+
+
+def test_bengali_factual_cases_require_a_search() -> None:
+    from evaluation.chat import load_cases
+
+    cases = {c.id: c for c in load_cases()}
+    for case_id in ("bn-refund-time", "bn-exchange-colour"):
+        checks = [c for c in cases[case_id].checks if c["type"] == "tool_called"]
+        assert checks and checks[0]["tool"] == "search_knowledge", case_id

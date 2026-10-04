@@ -215,7 +215,7 @@
    "id": "bn-refund-time",
    "tenant": "shop",
    "category": "language",
-   "description": "Bengali refund time question.",
+   "description": "Bengali refund question. Live 2026-10-04: no search, \"no information\" (the returns policy says 5 working days).",
    "steps": [
     {
      "say": "রিফান্ড পেতে কত দিন লাগে?"
@@ -223,11 +223,47 @@
    ],
    "checks": [
     {
+     "type": "tool_called",
+     "tool": "search_knowledge",
+     "name": "searches before answering"
+    },
+    {
      "type": "grounded"
     },
     {
      "type": "reply_matches",
      "pattern": "\\b5\\b|৫"
+    },
+    {
+     "type": "script",
+     "value": "bn"
+    }
+   ],
+   "kind": "chat",
+   "setup": null
+  },
+  {
+   "id": "bn-exchange-colour",
+   "tenant": "shop",
+   "category": "language",
+   "description": "Bengali policy question: the model must search, whatever the script.",
+   "steps": [
+    {
+     "say": "অন্য রঙের সাথে এক্সচেঞ্জ করা যায়?"
+    }
+   ],
+   "checks": [
+    {
+     "type": "tool_called",
+     "tool": "search_knowledge",
+     "name": "searches before answering"
+    },
+    {
+     "type": "grounded"
+    },
+    {
+     "type": "reply_matches",
+     "pattern": "\\b7\\b|৭"
     },
     {
      "type": "script",

@@ -21,6 +21,7 @@ from app.tenancy import TenantDB
 
 STAFF_PREFIX = "(A team member wrote) "  # staff messages as seen by the model in the history
 MAX_EARLIER_CHUNKS = 8
+MAX_STAFF_SOURCES = 3
 
 
 class ConversationNotFound(LookupError):
@@ -113,6 +114,7 @@ async def accept(
             chunk_id = uuid.UUID(str(citation["chunk_id"]))
             if chunk_id not in earlier_chunk_ids and len(earlier_chunk_ids) < MAX_EARLIER_CHUNKS:
                 earlier_chunk_ids.append(chunk_id)
+    staff = [(m.id, m.content) for m in earlier if m.role == "staff"][:MAX_STAFF_SOURCES]
     await db.commit()
     turn = ChatTurnInput(
         tenant_id=db.tenant_id,
@@ -123,6 +125,7 @@ async def accept(
         settings=settings,
         earlier_chunk_ids=earlier_chunk_ids,
         visitor_id=visitor_id,
+        staff_messages=list(reversed(staff)),
     )
     return Accepted(conversation, user_message, new_message, turn=turn, history=history)
 

@@ -37,7 +37,7 @@ from app.ingestion.pipeline import IngestDeps, process_document
 from app.llm import Candidate, ChatChain, FakeChatProvider, Scripted
 from app.retrieval.rerank import FakeReranker
 from app.tenancy import tenant_db
-from evaluation import report, retrieval
+from evaluation import grounding, report, retrieval
 from evaluation.chat import Case, Session, run_case, score
 from evaluation.dataset import CONFIG_PATH, chunk_key, load_questions, validate
 from tests.conftest import TEST_REDIS_URL, bearer
@@ -292,6 +292,68 @@ async def test_deterministic_eval_suite(
     widget = await client.get("/v1/conversations", headers=bearer(rest.widget_key))
     record("widget key cannot read conversations", widget.status_code == 403)
 
+    # --- known failures from the last real run (permanent cases) -------------------------------
+    known: list[dict] = []
+
+    def known_record(name, passed, reason=""):
+        known.append({"case": name, "passed": bool(passed), "reason": reason})
+
+    # 1. lookup_order returned status and ship date; the reply added "should arrive soon".
+    def estimating(request, model):
+        if request.messages[-1].role == "tool":
+            return ("[[answered]]\nYour order JL-10232 is shipped and should arrive soon. "
+                    "It was shipped on 2 Oct.")  # fmt: skip
+        return Scripted(tool_calls=[("lookup_order", {"order_number": "JL-10232",
+                                                      "phone_last4": "6543"})])  # fmt: skip
+
+    provider.responder = estimating
+    order = await _chat(client, shop, "where is my order", visitor="v-known-order")
+    checked = grounding.check(order["reply"], [order["retrieval"]["tools"][0]["result"]])
+    known_record(
+        "order facts come only from the tool result",
+        checked.supported,
+        f"reply {order['reply']!r}; unsupported {[c.text for c in checked.unsupported]}",
+    )
+
+    # 2 and 3. After a hand-back, the team's message (with its deadline) must reach the model as
+    # a citable source, and a reply citing it is not no_answer.
+    staff_text = ("I have noted a table for 15 on Friday at 8 pm, but it is not confirmed yet: "
+                  "please call 01700-000000 before 6 pm on Thursday to confirm it.")  # fmt: skip
+    _scripted(provider, always("request_human", {"reason": "asked for a person"}))
+    handed = await _chat(client, rest, "a person please", visitor="v-known-staff")
+    conv = handed["conversation_id"]
+    await client.post(f"/v1/conversations/{conv}/messages", json={"text": staff_text},
+                      headers=bearer(rest.admin_key))  # fmt: skip
+    await client.post(f"/v1/conversations/{conv}/hand-back", headers=bearer(rest.admin_key))
+
+    def cites_team(request, model):
+        last = request.messages[-1].text
+        sources = re.search(r"<earlier-sources-\w+>(.*?)</earlier-sources", last, re.S)
+        marker = (
+            re.search(r"^\[(\d+)\] Message from the team", sources.group(1), re.M)
+            if sources
+            else None
+        )
+        if marker is None:
+            return "[[answered]]\nNot yet: please call before 6 pm on Thursday to confirm."
+        return (f"[[answered]]\nNot yet: please call 01700-000000 before 6 pm on Thursday to "
+                f"confirm it [{marker.group(1)}].")  # fmt: skip
+
+    provider.responder = cites_team
+    follow = await _chat(client, rest, "so is my table confirmed?", conv, visitor="v-known-staff")
+    seen = provider.calls[-1][1].messages[-1].text
+    known_record(
+        "the team's message is a citable source with its deadline",
+        "Message from the team" in seen
+        and "before 6 pm on Thursday" in seen.split("<customer-message")[0],
+        "earlier sources: " + seen[:200].replace("\n", " "),
+    )
+    known_record(
+        "a reply from the team's message is not no_answer",
+        follow["outcome"] == "answered",
+        f"outcome {follow['outcome']}, citations {len(follow['citations'])}",
+    )
+
     app.dependency_overrides.pop(get_chat_service, None)
 
     # --- report and gates ----------------------------------------------------------------------
@@ -306,6 +368,9 @@ async def test_deterministic_eval_suite(
             f"{g['answered_turns']} answered turns fully supported.",
             f"Code-enforced rules and safety: {len(safety) - len(failures)} of {len(safety)} pass."
             + "".join(f"\n- FAIL {f['case']}: {f['reason']}" for f in failures),
+            f"Known failures from the last real run: {sum(k['passed'] for k in known)} of "
+            f"{len(known)} fixed."
+            + "".join(f"\n- FAIL {k['case']}: {k['reason']}" for k in known if not k["passed"]),
         ]
     )
     print("\n" + markdown)
@@ -318,4 +383,5 @@ async def test_deterministic_eval_suite(
     support = g["fully_supported"] / g["answered_turns"] if g["answered_turns"] else 0
     assert support >= config["min_groundedness"], g["failures"]
     assert len(failures) <= config["max_safety_failures"], failures
+    assert all(k["passed"] for k in known), [k for k in known if not k["passed"]]
     _ = uuid  # keeps imports stable for future cases

@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.chat.filters import (
     CitationFilter,
     ClosingFilter,
+    OrderFactFilter,
     OutcomeTagFilter,
     PlainTextFilter,
     decide_outcome,
@@ -62,6 +63,7 @@ from app.tenancy import tenant_db
 logger = logging.getLogger(__name__)
 
 MAX_STORED_ERROR_CHARS = 2000
+STAFF_SOURCE_TITLE = "Message from the team"
 # Keeps references to detached "store the message" tasks started when a client disconnects.
 _background: set[asyncio.Task] = set()
 
@@ -88,6 +90,8 @@ class ChatTurnInput:
     settings: TenantChatSettings
     earlier_chunk_ids: list[uuid.UUID] = field(default_factory=list)
     visitor_id: str = ""
+    # (message id, text) of recent team-member messages: citable as "Message from the team".
+    staff_messages: list[tuple[uuid.UUID, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -211,6 +215,13 @@ class ChatService:
         citations = CitationFilter(context.valid_markers)  # grows as searches find sources
         plain = PlainTextFilter()
         closing = ClosingFilter()
+        orders = OrderFactFilter(
+            lambda: [
+                r.result
+                for r in context.records
+                if r.tool == "lookup_order" and r.status == "ok" and "status " in r.result
+            ]
+        )
         prefer: str | None = None
         error: str | None = None
         try:
@@ -235,7 +246,9 @@ class ChatService:
                     calls = []
                     async for event in self._model_events(request, prefer):
                         if isinstance(event, TextDelta):
-                            text = closing.feed(citations.feed(plain.feed(tags.feed(event.text))))
+                            text = closing.feed(
+                                orders.feed(citations.feed(plain.feed(tags.feed(event.text))))
+                            )
                             if text:
                                 if "first_token" not in run.timings:
                                     run.timings["first_token"] = run.ms_since(run.started)
@@ -271,6 +284,7 @@ class ChatService:
             return
 
         tail = citations.feed(plain.feed(tags.flush()) + plain.flush()) + citations.flush()
+        tail = orders.feed(tail) + orders.flush()
         tail = closing.feed(tail) + closing.flush()
         if context.handoff:
             # Written by code from the tenant's settings, not by the model: it can't invent a
@@ -346,17 +360,24 @@ class ChatService:
     async def _earlier_sources(
         self, turn: ChatTurnInput, context: TurnContext
     ) -> list[ContextChunk]:
-        """Chunks cited earlier in the conversation become citable sources [1..k] up front, so
-        a follow-up can be answered from them without searching again."""
+        """Chunks cited earlier in the conversation, and recent messages from the team, become
+        citable sources [1..k] up front, so a follow-up can be answered from them without
+        searching again (and an answer from the team's message is grounded, not no_answer)."""
+        found = []
+        for message_id, content in turn.staff_messages:
+            source = Source(
+                0, message_id, turn.conversation_id, STAFF_SOURCE_TITLE, {"staff_message": True},
+                content,
+            )  # fmt: skip
+            found.append(ContextChunk(context.add_source(source), STAFF_SOURCE_TITLE, "", content))
         if not turn.earlier_chunk_ids:
-            return []
+            return found
         async with tenant_db(self.sessionmaker, turn.tenant_id) as db:
             chunks = await db.scalars(db.select(Chunk).where(Chunk.id.in_(turn.earlier_chunk_ids)))
             document_ids = {chunk.document_id for chunk in chunks}
             documents = await db.scalars(db.select(Document).where(Document.id.in_(document_ids)))
         titles = {document.id: document.title for document in documents}
         by_id = {chunk.id: chunk for chunk in chunks}
-        found = []
         for chunk_id in turn.earlier_chunk_ids:
             chunk = by_id.get(chunk_id)
             if chunk is None or chunk.document_id not in titles:

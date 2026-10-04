@@ -182,6 +182,66 @@ class ClosingFilter:
         return ""
 
 
+# Future delivery estimates. lookup_order returns a status and dates, never an arrival estimate;
+# gpt-oss added "should arrive soon" anyway.
+ESTIMATE = re.compile(
+    r"\b(arriv\w*|reach(?:es)? you|be with you|expected (?:on|by)|soon|tomorrow|next week|"
+    r"in \d+ (?:working )?days?|within \d+ (?:working )?days?|pouche jabe|peye jaben|druto)\b|"
+    "(পৌঁছে যাবে|পেয়ে যাবেন|শীঘ্রই|আগামীকাল)",
+    re.IGNORECASE,
+)
+CLAUSE_BREAK = re.compile(r"(?:,|;|\s+(?:and|but|ebong|ar|kintu|এবং|কিন্তু))\s+", re.IGNORECASE)
+
+
+def drop_unsupported_estimate(sentence: str, source: str) -> str:
+    """Cut a delivery-estimate clause the tool result does not support: "Your order is shipped
+    and should arrive soon." -> "Your order is shipped." A sentence that is only an estimate is
+    dropped."""
+    match = ESTIMATE.search(sentence)
+    if match is None or match.group(0).casefold() in source.casefold():
+        return sentence
+    head = sentence[: match.start()]
+    breaks = list(CLAUSE_BREAK.finditer(head))
+    if not breaks:
+        return ""
+    trailing = sentence[len(sentence.rstrip()) :]
+    kept = head[: breaks[-1].start()].rstrip()
+    end = "\u0964" if "\u0964" in sentence else "."
+    return f"{kept}{end}{trailing}" if kept else ""
+
+
+class OrderFactFilter:
+    """In a turn where an order was looked up, every sentence is held until it ends and any
+    delivery estimate the tool result does not contain is cut. Other turns pass through."""
+
+    def __init__(self, order_results) -> None:
+        self._results = order_results  # () -> the successful lookup_order results this turn
+        self._buffer = ""
+        self._emitted = False
+
+    def feed(self, text: str) -> str:
+        results = self._results()
+        if not results:
+            out, self._buffer = self._buffer + text, ""
+            return out
+        self._buffer += text
+        out = []
+        while match := SENTENCE_END.search(self._buffer):
+            sentence, self._buffer = self._buffer[: match.end()], self._buffer[match.end() :]
+            out.append(drop_unsupported_estimate(sentence, "\n".join(results)))
+        text = "".join(out)
+        self._emitted = self._emitted or bool(text.strip())
+        return text
+
+    def flush(self) -> str:
+        tail, self._buffer = self._buffer, ""
+        results = self._results()
+        if not results or not tail:
+            return tail
+        kept = drop_unsupported_estimate(tail, "\n".join(results))
+        return kept if kept.strip() or self._emitted else tail  # never leave the reply empty
+
+
 class PlainTextFilter:
     """The widget shows plain text: drops Markdown bold markers ("**") and turns non-breaking
     hyphens back into "-" (gpt-oss wrote booking references as "R\u2011K7C7FM", which a

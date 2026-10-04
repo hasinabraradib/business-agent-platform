@@ -407,3 +407,41 @@ def test_prompt_and_handoff_guidance_forbid_pretending_to_cancel() -> None:
 
     guidance = RequestHumanTool().guidance(SETTINGS)
     assert "cancelling or changing an order" in guidance and "instead of saying 'sure'" in guidance
+
+
+ORDER_RESULT = "Order JL-10232: status shipped; shipped 02 Oct 2026; courier: Steadfast."
+
+
+@pytest.mark.parametrize(
+    ("sentence", "expected"),
+    [
+        # gpt-oss, 2026-10-04: lookup_order said nothing about arrival.
+        (
+            "Your order JL-10232 is shipped and should arrive soon.",
+            "Your order JL-10232 is shipped.",
+        ),
+        ("It was shipped on 2 Oct, and you should get it tomorrow. ", "It was shipped on 2 Oct. "),
+        ("It should arrive within 2 days.", ""),
+        ("Your order is shipped via Steadfast.", "Your order is shipped via Steadfast."),
+        ("আপনার অর্ডার পাঠানো হয়েছে এবং শীঘ্রই পৌঁছে যাবে।", "আপনার অর্ডার পাঠানো হয়েছে।"),
+    ],
+)
+def test_unsupported_delivery_estimates_are_cut(sentence, expected) -> None:
+    from app.chat.filters import drop_unsupported_estimate
+
+    assert drop_unsupported_estimate(sentence, ORDER_RESULT) == expected
+
+
+def test_order_fact_filter_only_acts_after_an_order_lookup() -> None:
+    from app.chat.filters import OrderFactFilter
+
+    results: list[str] = []
+    orders = OrderFactFilter(lambda: results)
+    assert (
+        orders.feed("We should arrive soon at the party!") == "We should arrive soon at the party!"
+    )
+    results.append(ORDER_RESULT)
+    text = "Your order is shipped and should arrive soon. Anything else?"
+    assert _run(orders, [text[i : i + 5] for i in range(0, len(text), 5)]) == (
+        "Your order is shipped. Anything else?"
+    )

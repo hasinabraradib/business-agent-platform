@@ -6,6 +6,8 @@ through tools, and hands off to a human when needed. This repository currently c
 foundation: a FastAPI backend on PostgreSQL 16 (pgvector) and Redis 7 with tenants, API-key
 authentication, tenant data isolation and document ingestion, run locally with Docker Compose.
 
+[![CI](https://github.com/hasinabraradib/business-agent-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hasinabraradib/business-agent-platform/actions/workflows/ci.yml)
+
 ## Run locally
 
 Requires Docker and [uv](https://docs.astral.sh/uv/).

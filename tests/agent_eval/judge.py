@@ -35,7 +35,9 @@ not the customer. Tool results marked NOT DONE YET mean nothing was booked yet. 
 from the settings and the current time are grounded: whether the business is open now, whether
 the team is online, and when it is back. The handoff acknowledgement ("I've passed this to our
 team...") is written by the platform from those settings, not invented by the assistant.
-reason: one line naming the decisive problem, or what made it pass."""
+The deterministic expectations (regexes, tool checks) are checked by code: don't grade them
+yourself, and don't fail a reply for a pattern you think it matches; grade against the rubric.
+reason: one line in English naming the decisive problem, or what made it pass."""
 
 SCHEMA = {
     "name": "grade",

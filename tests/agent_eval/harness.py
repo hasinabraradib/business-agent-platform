@@ -254,8 +254,12 @@ def _calls(t: Transcript, tool: str) -> list[dict[str, Any]]:
     return [x for turn in t.turns for x in turn.tools if x.get("tool") == tool]
 
 
+# Models write typographic apostrophes and quotes (U+2019 etc.); patterns use plain ASCII.
+TYPOGRAPHY = str.maketrans({"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"'})
+
+
 def _search(pattern: str, text: str) -> re.Match | None:
-    return re.search(pattern, text or "", re.I | re.S)
+    return re.search(pattern, (text or "").translate(TYPOGRAPHY), re.I | re.S)
 
 
 BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")

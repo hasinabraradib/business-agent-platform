@@ -240,3 +240,22 @@ def test_report_escapes_customer_text_and_names_a_root_cause(tmp_path):
     assert "<script>alert" not in page and "&lt;script&gt;" in page
     assert "tool schema / validation" in report.root_cause(row)
     assert "booking" in report.markdown_summary(results)
+
+
+def test_typographic_apostrophes_match_plain_patterns():
+    # normal-spice failed only because the reply used a typographic apostrophe (U+2019).
+    case = harness.EvalCase("c", "normal", ["mild?"], {"must_contain": ["not|can't"]}, "r")
+    t = Transcript(
+        "c",
+        "restaurant",
+        facts={"reservations": 0},
+        turns=[
+            Turn(
+                say="mild?",
+                reply="We can\u2019t make it mild [1].",
+                outcome="answered",
+                status="ai",
+            )
+        ],
+    )
+    assert harness.grade(case, t).passed

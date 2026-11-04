@@ -1,6 +1,6 @@
-"""Serve demo/site on http://localhost:8090 (an allowed origin of the demo tenant).
+"""Serve demo/site on http://localhost:8095 (an allowed origin of the demo tenant).
 
-python demo/site/serve.py [--port 8090]
+python demo/site/serve.py [--port 8095]
 """
 
 import argparse
@@ -9,7 +9,7 @@ import http.server
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--port", type=int, default=8090)
+parser.add_argument("--port", type=int, default=8095)
 args = parser.parse_args()
 handler = functools.partial(
     http.server.SimpleHTTPRequestHandler, directory=str(Path(__file__).resolve().parent)

@@ -18,7 +18,7 @@ To re-record it (needs Docker, [uv](https://docs.astral.sh/uv/) and ffmpeg):
 docker compose up -d --build                         # API, worker, dashboard
 docker compose run --rm -v "$PWD/demo/site:/demo-site" migrate \
   python /demo/seed.py --site-config /demo-site/config.local.js   # tenant, documents, widget key
-python3 demo/site/serve.py &                         # the restaurant site on http://localhost:8090
+python3 demo/site/serve.py &                         # the restaurant site on http://localhost:8095
 RECORD="uv run --no-project --with playwright==1.63.0 --with pyyaml python demo/record_demo.py"
 $RECORD --dry-run                                    # play every scene and check the replies
 $RECORD                                              # record (each scene retried up to 3 times)

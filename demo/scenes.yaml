@@ -16,7 +16,7 @@ video:
   default_hold_s: 2.5
   retries: 3
 
-site_url: http://localhost:8090
+site_url: http://localhost:8095
 dashboard_url: http://localhost:3001
 
 scenes:

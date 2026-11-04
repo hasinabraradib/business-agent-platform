@@ -26,6 +26,7 @@ from pathlib import Path
 
 import yaml
 from playwright.sync_api import BrowserContext, Page, sync_playwright
+from playwright.sync_api import Error as PlaywrightError
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -426,6 +427,15 @@ def make_context(browser, size: dict, video_dir: Path | None) -> BrowserContext:
 
 
 def run_scene(
+    page: Page, director: Director, scene: dict, cfg: dict, checks: list, admin_key: str
+) -> float:
+    try:
+        return _run_scene(page, director, scene, cfg, checks, admin_key)
+    except PlaywrightError as exc:  # timeouts and missing elements fail the scene, not the run
+        raise SceneFailed(f"{scene['id']}: {str(exc).splitlines()[0]}") from None
+
+
+def _run_scene(
     page: Page, director: Director, scene: dict, cfg: dict, checks: list, admin_key: str
 ) -> float:
     kind = scene["kind"]

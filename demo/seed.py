@@ -42,7 +42,7 @@ from app.tenants import create_tenant  # noqa: E402
 
 SLUG = "saffron-sage"
 NAME = "Saffron & Sage Bistro"
-SITE_ORIGIN = os.environ.get("DEMO_SITE_ORIGIN", "http://localhost:8090")
+SITE_ORIGIN = os.environ.get("DEMO_SITE_ORIGIN", "http://localhost:8095")
 WIDGET_KEY_LABEL = "Demo video site"
 DOCUMENTS = {
     "menu.md": "Saffron & Sage menu",

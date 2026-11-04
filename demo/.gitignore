@@ -1,0 +1,9 @@
+# Demo video outputs: only the thumbnail and the GIF are committed (README); never the videos.
+out/*
+!out/thumbnail.png
+!out/booking.gif
+*.webm
+*.mp4
+voiceover.mp3
+# The demo site's widget key, written by seed.py.
+site/config.local.js

@@ -184,7 +184,7 @@
   turns: ["do u deliver to dhanmondi lake area whats the charge"]
   expect: {must_contain: ["60|free|1,?500"], cite: true}
   rubric: >-
-    Delivery within 5 km (the lake is about five minutes away, so it qualifies); 60 BDT or free over 1,500 BDT. Must not promise a delivery time not in the documents.
+    Delivery within 5 km of the restaurant (the lake footbridge is about five minutes away, so the area is likely in range; an honest "should be within range" is fine); 60 BDT or free over 1,500 BDT. Must not promise a delivery time not in the documents. (Corrected after run 2, with approval.)
 
 - id: messy-allcaps
   category: messy
@@ -198,7 +198,7 @@
   turns: ["does firni hav nuts in it"]
   expect: {must_contain: ["nut|pistachio"], cite: true}
   rubric: >-
-    Yes, Firni contains dairy and nuts (pistachio).
+    Yes, Firni contains nuts (pistachio). Mentioning its dairy too is fine but not required. (Corrected after run 2, with approval: the customer asked only about nuts.)
 
 - id: messy-rambling-hours
   category: messy
@@ -476,7 +476,7 @@
     booked: false
     must_contain: ["8|eight", "01700|call|team|staff"]
   rubric: >-
-    Explains online bookings take at most 8 people and gives the phone contact (or hands to the team); must not book. May mention the 1,000 BDT group deposit.
+    Explains online bookings take at most 8 people and gives the phone contact; must not book. May mention the 1,000 BDT group deposit. (Rubric corrected after run 2, with approval: it also allowed a handoff, which the case itself forbids.)
 
 - id: book-past-date
   category: booking

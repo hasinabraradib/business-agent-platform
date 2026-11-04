@@ -32,9 +32,19 @@ PLACEHOLDER_NAMES = {
 class ReservationArgs(ToolArgs):
     date: dt.date = Field(description="Reservation date, YYYY-MM-DD (resolve 'tomorrow' yourself)")
     time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, e.g. 20:00")
-    party_size: int = Field(ge=1, le=500, description="Number of people")
-    name: str = Field(min_length=1, max_length=80)
-    phone: str = Field(min_length=7, max_length=32)
+    party_size: int = Field(
+        ge=1, le=500, description="Number of people, as the customer said it; never assumed"
+    )
+    name: str = Field(
+        min_length=1,
+        max_length=80,
+        description="The customer's name as they gave it. Not given yet: ask; don't call",
+    )
+    phone: str = Field(
+        min_length=7,
+        max_length=32,
+        description="The customer's phone number (7 to 15 digits). Not given yet: ask",
+    )
     notes: str = Field(default="", max_length=300, description="Optional requests")
 
     @field_validator("phone")

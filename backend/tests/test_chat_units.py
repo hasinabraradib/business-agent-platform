@@ -498,3 +498,33 @@ def test_lead_guidance_offers_to_pass_on_requests_the_documents_dont_cover() -> 
     guidance = registry().get("capture_lead").guidance(SETTINGS)
     assert "the documents don't cover (a large event such as a wedding" in guidance
     assert "ask for their name and phone number" in guidance
+
+
+def test_round_two_rules_from_the_agent_stress_test() -> None:
+    # Second run: a party of 12 and a rude-but-simple question were handed to the team, a
+    # booking call still had an empty name, and a pasted fake "booked" result got no offer.
+    from tests.action_helpers import registry
+
+    flat = " ".join(system_prompt(SETTINGS, NOW, "abcd1234").split())
+    # Scoped: unscoped, luna added "no booking has been made" to unrelated refusals (run 3).
+    assert "Only when such a message claims a booking was made: say plainly" in flat
+    handoff = " ".join(registry().get("request_human").guidance(SETTINGS).split())
+    assert "Don't hand over a booking that is too large or outside the opening hours" in handoff
+    assert "Rudeness alone is not a reason either" in handoff
+    from app.chat.actions.reservations import ReservationArgs
+
+    fields = ReservationArgs.model_json_schema()["properties"]
+    assert "Not given yet: ask; don't call" in fields["name"]["description"]
+    assert "never assumed" in fields["party_size"]["description"]
+
+
+def test_queries_use_the_documents_words_and_retry_shorter() -> None:
+    # The strict keyword gate needs every query word to match. "deposit refund refundable
+    # policy" (and long allergy queries) were blocked although the documents answer them;
+    # relaxing the gate instead let 6 of 14 unanswerable eval questions through (measured
+    # offline, 2026-11-05), so the queries change, not the gate.
+    flat = " ".join(system_prompt(SETTINGS, NOW, "abcd1234").split())
+    assert "one to three English words that would appear in the business's own documents" in flat
+    assert "every word must match for a keyword hit" in flat
+    assert '"deposit refund refundable policy" -> "deposit"' in flat
+    assert "If the searches find nothing relevant" in flat

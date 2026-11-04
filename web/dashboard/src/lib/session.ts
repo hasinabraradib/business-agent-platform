@@ -16,17 +16,21 @@ export interface Session {
 }
 
 // Without SESSION_SECRET (e.g. a quick local run) a random secret is made at start: nothing
-// secret is committed, and sessions simply end when the server restarts.
-let ephemeral: string | null = null;
+// secret is committed, and sessions simply end when the server restarts. It lives on
+// globalThis, not in a module variable: Next.js bundles the sign-in route and the pages
+// separately, and with one secret per bundle every cookie was rejected (back to /login).
+const EPHEMERAL = Symbol.for("bap.dashboard.ephemeralSessionSecret");
+type WithSecret = typeof globalThis & { [EPHEMERAL]?: string };
 
 function configuredSecret(): string {
   const value = process.env.SESSION_SECRET ?? "";
   if (value) return value;
-  if (!ephemeral) {
-    ephemeral = randomBytes(32).toString("hex");
+  const store = globalThis as WithSecret;
+  if (!store[EPHEMERAL]) {
+    store[EPHEMERAL] = randomBytes(32).toString("hex");
     console.warn("SESSION_SECRET is not set: using a random one; sessions end on restart.");
   }
-  return ephemeral;
+  return store[EPHEMERAL];
 }
 
 function secretKey(secret = configuredSecret()): Buffer {

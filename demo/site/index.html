@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Saffron &amp; Sage Bistro · South Lamar, Austin</title>
+  <meta name="description" content="Seasonal Mediterranean-meets-Texas cooking on South Lamar. Brunch on weekends, patio dogs welcome.">
+  <style>
+    :root {
+      --cream: #f7f1e6;
+      --paper: #fffaf1;
+      --ink: #23281f;
+      --muted: #5f6656;
+      --sage: #5b7553;
+      --sage-deep: #3e5638;
+      --saffron: #d9922e;
+      --line: #e3d8c4;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--cream);
+      color: var(--ink);
+      font: 17px/1.6 "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    }
+    h1, h2, h3 { font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif; font-weight: 600; line-height: 1.15; margin: 0; }
+    a { color: inherit; }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+
+    header {
+      position: sticky; top: 0; z-index: 5;
+      background: rgba(247, 241, 230, 0.92);
+      backdrop-filter: blur(6px);
+      border-bottom: 1px solid var(--line);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+    .brand strong { font-family: "Iowan Old Style", Georgia, serif; font-size: 23px; letter-spacing: 0.2px; }
+    .brand small { display: block; font-size: 12px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--muted); }
+    nav a { margin-left: 26px; text-decoration: none; font-size: 15px; color: var(--muted); }
+    nav a:hover { color: var(--ink); }
+    nav .book { color: var(--paper); background: var(--sage); padding: 9px 18px; border-radius: 999px; }
+
+    .hero { padding: 84px 0 72px; display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 56px; align-items: center; }
+    .eyebrow { color: var(--saffron); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; font-size: 13px; }
+    .hero h1 { font-size: 64px; margin: 14px 0 20px; }
+    .hero p { font-size: 20px; color: var(--muted); max-width: 30em; }
+    .hero .actions { margin-top: 30px; display: flex; gap: 14px; flex-wrap: wrap; }
+    .btn { display: inline-block; padding: 13px 24px; border-radius: 999px; text-decoration: none; font-weight: 600; }
+    .btn.primary { background: var(--sage-deep); color: var(--paper); }
+    .btn.ghost { border: 1.5px solid var(--sage-deep); color: var(--sage-deep); }
+    .plate {
+      aspect-ratio: 1; border-radius: 50%;
+      background:
+        radial-gradient(circle at 50% 50%, #fffaf1 0 47%, transparent 47.5%),
+        radial-gradient(circle at 50% 50%, #efe4cf 0 60%, transparent 60.5%),
+        radial-gradient(circle at 50% 50%, #e6d6ba 0 70%, transparent 70.5%);
+      position: relative; box-shadow: 0 30px 60px -30px rgba(62, 86, 56, 0.45);
+    }
+    .plate svg { position: absolute; inset: 14%; width: 72%; height: 72%; }
+    .note { margin-top: 18px; text-align: center; color: var(--muted); font-size: 14px; font-style: italic; }
+
+    section { padding: 72px 0; }
+    section.band { background: var(--paper); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .section-head { display: flex; align-items: end; justify-content: space-between; margin-bottom: 30px; gap: 20px; }
+    .section-head h2 { font-size: 42px; }
+    .section-head p { color: var(--muted); margin: 0; max-width: 32em; }
+    .menu { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+    .dish { background: var(--cream); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
+    .dish h3 { font-size: 22px; display: flex; justify-content: space-between; gap: 10px; }
+    .dish h3 span { font-family: "Avenir Next", system-ui, sans-serif; font-size: 17px; color: var(--sage-deep); }
+    .dish p { margin: 8px 0 12px; color: var(--muted); font-size: 15px; }
+    .tags span { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: #e7eedf; color: var(--sage-deep); margin-right: 6px; }
+    .tags span.fav { background: #f8e3c3; color: #8a5413; }
+
+    .info { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 36px; }
+    .info h3 { font-size: 24px; margin-bottom: 12px; }
+    .hours { width: 100%; border-collapse: collapse; font-size: 16px; }
+    .hours td { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+    .hours td:last-child { text-align: right; color: var(--muted); }
+    .map {
+      border-radius: 18px; border: 1px solid var(--line); height: 190px; margin-top: 12px;
+      background:
+        linear-gradient(90deg, transparent 47%, #e8dcc6 47% 53%, transparent 53%),
+        linear-gradient(0deg, transparent 58%, #ece2cf 58% 62%, transparent 62%),
+        linear-gradient(0deg, transparent 22%, #ece2cf 22% 25%, transparent 25%),
+        #f3ecdf;
+      position: relative;
+    }
+    .map::after { content: "●  Saffron & Sage"; position: absolute; left: 51%; top: 40%; color: var(--sage-deep); font-weight: 700; font-size: 14px; }
+
+    footer { padding: 36px 0 60px; color: var(--muted); font-size: 14px; }
+    footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+
+    @media (max-width: 820px) {
+      .hero, .info, .menu { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 44px; }
+      nav a:not(.book) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="#top">
+        <svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r="19" fill="#5b7553"/>
+          <path d="M20 30c0-8 4-14 10-17-1 8-5 14-10 17z" fill="#cfe0c4"/>
+          <path d="M20 30c0-8-4-14-10-17 1 8 5 14 10 17z" fill="#e7f0df"/>
+          <circle cx="20" cy="12" r="3" fill="#d9922e"/>
+        </svg>
+        <span><strong>Saffron &amp; Sage</strong><small>Bistro · Austin</small></span>
+      </a>
+      <nav>
+        <a href="#menu">Menu</a>
+        <a href="#visit">Hours &amp; location</a>
+        <a href="#events">Private dining</a>
+        <a class="book" href="#visit">Book a table</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="wrap hero">
+      <div>
+        <div class="eyebrow">South Lamar · since 2019</div>
+        <h1>Mediterranean cooking with a Texas accent.</h1>
+        <p>Wood-fired vegetables, slow braises and Gulf seafood, cooked by our open kitchen on South Lamar. Weekend brunch, a shady patio, and dogs welcome outside.</p>
+        <div class="actions">
+          <a class="btn primary" href="#menu">See the menu</a>
+          <a class="btn ghost" href="#visit">Plan your visit</a>
+        </div>
+      </div>
+      <div>
+        <div class="plate" role="img" aria-label="Illustration of our roasted cauliflower shawarma">
+          <svg viewBox="0 0 200 200" aria-hidden="true">
+            <ellipse cx="100" cy="108" rx="62" ry="50" fill="#e9b65f"/>
+            <ellipse cx="88" cy="96" rx="30" ry="24" fill="#f3cd84"/>
+            <ellipse cx="122" cy="104" rx="26" ry="22" fill="#dca04a"/>
+            <ellipse cx="104" cy="126" rx="30" ry="18" fill="#efc272"/>
+            <path d="M48 140c30 12 74 12 104 0" stroke="#fffaf1" stroke-width="6" fill="none" stroke-linecap="round"/>
+            <g fill="#5b7553"><ellipse cx="62" cy="70" rx="12" ry="6" transform="rotate(-30 62 70)"/><ellipse cx="142" cy="74" rx="12" ry="6" transform="rotate(25 142 74)"/><ellipse cx="150" cy="138" rx="10" ry="5" transform="rotate(-20 150 138)"/></g>
+            <g fill="#c4471f"><circle cx="80" cy="128" r="3"/><circle cx="116" cy="88" r="3"/><circle cx="132" cy="122" r="3"/></g>
+          </svg>
+        </div>
+        <div class="note">Roasted Cauliflower Shawarma, our chef's favourite</div>
+      </div>
+    </div>
+
+    <section class="band" id="menu">
+      <div class="wrap">
+        <div class="section-head">
+          <h2>From the menu</h2>
+          <p>A few of the plates our regulars order again and again. Every dish is labelled vegan, vegetarian or gluten-free.</p>
+        </div>
+        <div class="menu">
+          <article class="dish">
+            <h3>Saffron Braised Short Rib <span>$34</span></h3>
+            <p>Twelve-hour braise, saffron-parsnip purée, gremolata.</p>
+            <div class="tags"><span>GF</span><span class="fav">Best seller</span></div>
+          </article>
+          <article class="dish">
+            <h3>Cauliflower Shawarma <span>$22</span></h3>
+            <p>Whole-roasted with shawarma spices, tahini, herbs, crispy chickpeas.</p>
+            <div class="tags"><span>Vegan</span><span>GF</span><span class="fav">Chef's favourite</span></div>
+          </article>
+          <article class="dish">
+            <h3>Pan-Seared Redfish <span>$29</span></h3>
+            <p>Gulf redfish, lemon-caper brown butter, charred broccolini.</p>
+            <div class="tags"><span>GF</span></div>
+          </article>
+          <article class="dish">
+            <h3>Whipped Feta &amp; Hot Honey <span>$12</span></h3>
+            <p>Texas wildflower honey with chile, pistachio dukkah, warm flatbread.</p>
+            <div class="tags"><span>Vegetarian</span></div>
+          </article>
+          <article class="dish">
+            <h3>Wild Mushroom Farro <span>$24</span></h3>
+            <p>Roasted wild mushrooms, sage brown butter, parmesan.</p>
+            <div class="tags"><span>Vegetarian</span></div>
+          </article>
+          <article class="dish">
+            <h3>Olive Oil Cake <span>$10</span></h3>
+            <p>Citrus glaze, whipped mascarpone.</p>
+            <div class="tags"><span>Vegetarian</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="visit">
+      <div class="wrap info">
+        <div>
+          <h3>Hours</h3>
+          <table class="hours">
+            <tr><td>Monday</td><td>Closed</td></tr>
+            <tr><td>Tuesday – Thursday</td><td>11:30 am – 9:30 pm</td></tr>
+            <tr><td>Friday</td><td>11:30 am – 10:30 pm</td></tr>
+            <tr><td>Saturday</td><td>10 am – 10:30 pm</td></tr>
+            <tr><td>Sunday</td><td>10 am – 9 pm</td></tr>
+          </table>
+        </div>
+        <div>
+          <h3>Find us</h3>
+          <p>2214 South Lamar Blvd<br>Austin, TX 78704</p>
+          <p>Free parking behind the building, entrance on Bluebonnet Lane.</p>
+          <div class="map" aria-hidden="true"></div>
+        </div>
+        <div id="events">
+          <h3>Private dining</h3>
+          <p>The Sage Room seats up to 20 for birthdays, rehearsal dinners and business dinners, with set menus from $55 per guest.</p>
+          <p><a href="tel:+15125550142">(512) 555-0142</a><br><a href="mailto:hello@saffronandsage.example">hello@saffronandsage.example</a></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>© Saffron &amp; Sage Bistro · 2214 South Lamar Blvd, Austin</span>
+      <span>Questions? Chat with Sage, bottom right.</span>
+    </div>
+  </footer>
+
+  <!-- The chat widget. The key comes from the git-ignored config.local.js written by demo/seed.py. -->
+  <script src="config.local.js"></script>
+  <script>
+    (function () {
+      var demo = window.SAFFRON_DEMO;
+      if (!demo || !demo.key) {
+        console.warn("No widget key: run demo/seed.py with --site-config first.");
+        return;
+      }
+      var script = document.createElement("script");
+      script.src = demo.api + "/widget.js";
+      script.async = true;
+      script.setAttribute("data-key", demo.key);
+      script.setAttribute("data-api", demo.api);
+      document.body.appendChild(script);
+    })();
+  </script>
+</body>
+</html>

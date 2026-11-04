@@ -78,7 +78,8 @@ class OpenAICompatChatProvider(ChatProvider):
             "stream": True,
             "stream_options": {"include_usage": True},
             "temperature": request.temperature,
-            "max_tokens": request.max_output_tokens,
+            # OpenAI's newer models reject the deprecated max_tokens; Groq accepts both.
+            "max_completion_tokens": request.max_output_tokens,
         }
         if request.tools:
             body["tools"] = [

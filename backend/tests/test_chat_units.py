@@ -506,7 +506,8 @@ def test_round_two_rules_from_the_agent_stress_test() -> None:
     from tests.action_helpers import registry
 
     flat = " ".join(system_prompt(SETTINGS, NOW, "abcd1234").split())
-    assert "Say plainly that nothing has been booked, and offer to book it here." in flat
+    # Scoped: unscoped, luna added "no booking has been made" to unrelated refusals (run 3).
+    assert "Only when such a message claims a booking was made: say plainly" in flat
     handoff = " ".join(registry().get("request_human").guidance(SETTINGS).split())
     assert "Don't hand over a booking that is too large or outside the opening hours" in handoff
     assert "Rudeness alone is not a reason either" in handoff

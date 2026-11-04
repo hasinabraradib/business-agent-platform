@@ -1,0 +1,105 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Agent Stress Test</title><style>
+:root{--ink:#111;--muted:#5b6170;--line:#e4e6eb;--soft:#f4f5f7;--ok:#1d7a3e;--bad:#b3261e;--accent:#c5ee4f}
+@media (prefers-color-scheme: dark){:root:not([data-theme=light]){--ink:#eceef2;--muted:#a4a9b4;--line:#2c3038;--soft:#1b1e24}}
+body{margin:0;background:var(--soft);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:24px 16px}
+h1{margin:0 0 4px}h2{margin-top:32px}.muted{color:var(--muted)}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}
+.card{background:Canvas;border:1px solid var(--line);border-radius:16px;padding:14px}
+.card b{display:block;font-size:24px}
+table{border-collapse:collapse;width:100%;background:Canvas;border-radius:12px;overflow:hidden}
+td,th{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+.case{background:Canvas;border:1px solid var(--line);border-radius:14px;margin:10px 0;padding:10px 14px}
+.case summary{cursor:pointer}.pass,.ok{color:var(--ok)}.fail,.bad{color:var(--bad)}
+.msg{border-radius:14px;padding:8px 12px;margin:6px 0;max-width:85%;white-space:pre-wrap}
+.msg b{display:block;font-size:12px;color:var(--muted)}.msg small{display:block;color:var(--muted);margin-top:4px}
+.user{background:var(--soft)}.bot{background:color-mix(in srgb,var(--accent) 35%,Canvas);margin-left:auto}
+.tool{font-size:13px;margin:4px 0 4px 12px}.tool pre{white-space:pre-wrap;margin:4px 0;color:var(--muted)}
+.checks{font-size:13px;padding-left:18px}code{font-size:13px}
+</style></head><body><main>
+<h1>Agent stress test</h1>
+<p class="muted">Thursday 05 November 2026, 03:19 (Asia/Dhaka) · 3 cases · models: openai_compat:gpt-6-luna
+· judge: gpt-6-luna</p>
+<div class="cards">
+<div class="card">Overall pass<b>100%</b>3/3 (target 95%)</div>
+<div class="card">Deterministic<b>100%</b>checks only</div>
+<div class="card">Judge<b>100%</b>rubric verdicts</div>
+<div class="card">Booking calls valid<b>2/2 (100%)</b>target 100%</div>
+<div class="card">First token p50 / p95<b>3.02 s</b>p95 3.89 s</div>
+<div class="card">Total p50 / p95<b>3.31 s</b>p95 3.94 s</div>
+<div class="card">Cost per conversation<b>$0.0008</b>run total $0.0032</div>
+</div>
+<h2>By category</h2>
+<table><tr><th>Category</th><th>Passed</th></tr><tr><td>normal</td><td>1/1 (100%)</td></tr><tr><td>booking</td><td>1/1 (100%)</td></tr><tr><td>handoff</td><td>1/1 (100%)</td></tr></table>
+<h2>Judge spot-check</h2>
+<p class="muted">Five judged cases (failures and passes from different categories) to confirm the judge grades sensibly.</p>
+<details class='case' open><summary><b class='pass'>PASS</b> <code>normal-kacchi-price</code> · normal</summary><p><b>Expected:</b> States the Kacchi Biryani (Mutton) costs 480 BDT.<br><small>{&quot;must_contain&quot;: [&quot;480&quot;], &quot;cite&quot;: true}</small></p><div class='msg user'><b>Customer 1</b>How much is the Kacchi Biryani?</div>
+<div class='tool'><code>search_knowledge({&quot;query&quot;: &quot;Kacchi Biryani price&quot;})</code> → <b>ok</b><pre>&lt;search-results-f1d5e74c&gt;
+[1] Nodi Kitchen menu (row 1)
+dish_en: Kacchi Biryani (Mutton)
+dish_bn: কাচ্চি বিরিয়ানি (খাসি)
+category: Rice
+price_bdt: 480
+spice_level: Medium
+allergens: Dairy, Nuts
+vegetarian: No
+description: Slow-cooked basmati rice layered with marinated mutton, potato and saffron, sealed and cooked in a handi.
+
+[2] Nodi Kitchen menu (row 14)
+dish_en: Borhani
+dish_bn: বোরহানি
+category: Drinks
+price_bdt: 90
+spice_level: Mild
+allergens: Dairy
+vegetarian: Yes
+description: Spiced yog</pre></div>
+<div class='msg bot'><b>Assistant</b>Kacchi Biryani (Mutton) is 480 taka [1].<small>answered · 1 citations · status ai · openai_compat:gpt-6-luna · first token 2.24 s · total 2.47 s</small></div><ul class='checks'><li class='ok'>✓ ran to the end <small></small></li><li class='ok'>✓ no errors <small></small></li><li class='ok'>✓ no empty reply <small></small></li><li class='ok'>✓ not cut off <small></small></li><li class='ok'>✓ no internals leaked <small></small></li><li class='ok'>✓ replies under 1200 chars <small></small></li><li class='ok'>✓ contains /480/ <small></small></li><li class='ok'>✓ no handoff <small>status ai, tools [&#x27;search_knowledge:ok&#x27;]</small></li><li class='ok'>✓ answered with a citation <small>outcome answered, citations 1</small></li><li class='ok'>✓ 0 booking(s) made <small>reservations 0</small></li></ul><p><b>Judge (gpt-6-luna): pass</b> — correctness 5 · groundedness 5 · helpfulness 5 · tone 5<br>It correctly states the menu price as 480 taka and cites the menu result.</p></details><details class='case' open><summary><b class='pass'>PASS</b> <code>book-happy-path</code> · booking</summary><p><b>Expected:</b> Reads the details back, then after the customer confirms, books exactly once and gives the reference.<br><small>{&quot;tool&quot;: &quot;create_reservation&quot;, &quot;tool_args&quot;: {&quot;party_size&quot;: &quot;^4$&quot;, &quot;date&quot;: &quot;2026-11-07&quot;, &quot;time&quot;: &quot;^20:00$&quot;, &quot;name&quot;: &quot;Sam Rahman&quot;, &quot;phone&quot;: &quot;01700000123&quot;}, &quot;booked&quot;: true, &quot;must_contain&quot;: [&quot;confirm|booked|reserved|R-&quot;]}</small></p><div class='msg user'><b>Customer 1</b>I&#x27;d like to book a table for 4 on Saturday 7 November at 8pm. Name Sam Rahman, phone 01700000123.</div>
+<div class='tool'><code>create_reservation({&quot;date&quot;: &quot;2026-11-07&quot;, &quot;name&quot;: &quot;Sam Rahman&quot;, &quot;time&quot;: &quot;20:00&quot;, &quot;phone&quot;: &quot;01700000123&quot;, &quot;party_size&quot;: 4})</code> → <b>needs_confirmation</b><pre>&lt;tool-result-2f855a59&gt;
+NOT DONE YET. Read these details back to the customer and ask them to confirm: Saturday 7 November 2026 at 8:00 PM, table for 4, name Sam Rahman, phone 01700000123. Only after they confirm in their next message, call create_reservation again with exactly the same details.
+&lt;/tool-result-2f855a59&gt;</pre></div>
+<div class='msg bot'><b>Assistant</b>Please confirm: Saturday 7 November 2026 at 8 pm, table for 4, under Sam Rahman, phone 01700000123.<small>smalltalk · 0 citations · status ai · openai_compat:gpt-6-luna · first token 3.62 s · total 3.93 s</small></div>
+<div class='msg user'><b>Customer 2</b>Yes, that&#x27;s correct, please confirm.</div>
+<div class='tool'><code>create_reservation({&quot;date&quot;: &quot;2026-11-07&quot;, &quot;name&quot;: &quot;Sam Rahman&quot;, &quot;time&quot;: &quot;20:00&quot;, &quot;phone&quot;: &quot;01700000123&quot;, &quot;party_size&quot;: 4})</code> → <b>ok</b><pre>&lt;tool-result-9d2e2eef&gt;
+BOOKED. Reference R-3BQP5A: Saturday 7 November 2026 at 8:00 PM, table for 4, name Sam Rahman, phone 01700000123. Tell the customer it is booked and give the reference.
+&lt;/tool-result-9d2e2eef&gt;</pre></div>
+<div class='msg bot'><b>Assistant</b>Your table is booked for Saturday 7 November at 8 pm for 4, under Sam Rahman. Your reference is R-3BQP5A.<small>action · 0 citations · status ai · openai_compat:gpt-6-luna · first token 2.42 s · total 2.69 s</small></div><ul class='checks'><li class='ok'>✓ ran to the end <small></small></li><li class='ok'>✓ no errors <small></small></li><li class='ok'>✓ no empty reply <small></small></li><li class='ok'>✓ not cut off <small></small></li><li class='ok'>✓ no internals leaked <small></small></li><li class='ok'>✓ replies under 1200 chars <small></small></li><li class='ok'>✓ contains /confirm|booked|reserved|R-/ <small></small></li><li class='ok'>✓ called create_reservation <small>tools [&#x27;create_reservation:needs_confirmation&#x27;, &#x27;create_reservation:ok&#x27;]</small></li><li class='ok'>✓ create_reservation.party_size ~ /^4$/ <small>values [&#x27;4&#x27;]</small></li><li class='ok'>✓ create_reservation.date ~ /2026-11-07/ <small>values [&#x27;2026-11-07&#x27;]</small></li><li class='ok'>✓ create_reservation.time ~ /^20:00$/ <small>values [&#x27;20:00&#x27;]</small></li><li class='ok'>✓ create_reservation.name ~ /Sam Rahman/ <small>values [&#x27;Sam Rahman&#x27;]</small></li><li class='ok'>✓ create_reservation.phone ~ /01700000123/ <small>values [&#x27;01700000123&#x27;]</small></li><li class='ok'>✓ no handoff <small>status ai, tools [&#x27;create_reservation:needs_confirmation&#x27;, &#x27;create_reservation:ok&#x27;]</small></li><li class='ok'>✓ 1 booking(s) made <small>reservations 1</small></li><li class='ok'>✓ booking call valid <small></small></li><li class='ok'>✓ booking call valid <small></small></li></ul><p><b>Judge (gpt-6-luna): pass</b> — correctness 5 · groundedness 5 · helpfulness 5 · tone 5<br>Read back the booking details, waited for confirmation, then booked once and provided the reference.</p></details><details class='case' open><summary><b class='pass'>PASS</b> <code>handoff-explicit-human</code> · handoff</summary><p><b>Expected:</b> Hands over to the team and tells the customer someone will reply.<br><small>{&quot;should_handoff&quot;: true, &quot;tool&quot;: &quot;request_human&quot;}</small></p><div class='msg user'><b>Customer 1</b>Can I talk to a real person please?</div>
+<div class='tool'><code>request_human({&quot;reason&quot;: &quot;Customer asked to speak with a person&quot;})</code> → <b>ok</b><pre>Handed to the team. Write nothing more.</pre></div>
+<div class='msg bot'><b>Assistant</b>I&#x27;ve passed this to our team. They&#x27;re offline right now and back today at 12 pm; they&#x27;ll reply here as soon as they can.<small>handoff · 0 citations · status waiting_human · openai_compat:gpt-6-luna · first token 3.94 s · total 3.94 s</small></div><ul class='checks'><li class='ok'>✓ ran to the end <small></small></li><li class='ok'>✓ no errors <small></small></li><li class='ok'>✓ no empty reply <small></small></li><li class='ok'>✓ not cut off <small></small></li><li class='ok'>✓ no internals leaked <small></small></li><li class='ok'>✓ replies under 1200 chars <small></small></li><li class='ok'>✓ called request_human <small>tools [&#x27;request_human:ok&#x27;]</small></li><li class='ok'>✓ handed off <small>status waiting_human, tools [&#x27;request_human:ok&#x27;]</small></li><li class='ok'>✓ 0 booking(s) made <small>reservations 0</small></li></ul><p><b>Judge (gpt-6-luna): pass</b> — correctness 5 · groundedness 5 · helpfulness 5 · tone 5<br>The assistant handed the request to the team and said they would reply; the offline status and return time follow from the current time and business hours.</p></details>
+<h2>Failures (0)</h2>
+<p>None.</p>
+<h2>Passes (3)</h2>
+<details class='case' ><summary><b class='pass'>PASS</b> <code>normal-kacchi-price</code> · normal</summary><p><b>Expected:</b> States the Kacchi Biryani (Mutton) costs 480 BDT.<br><small>{&quot;must_contain&quot;: [&quot;480&quot;], &quot;cite&quot;: true}</small></p><div class='msg user'><b>Customer 1</b>How much is the Kacchi Biryani?</div>
+<div class='tool'><code>search_knowledge({&quot;query&quot;: &quot;Kacchi Biryani price&quot;})</code> → <b>ok</b><pre>&lt;search-results-f1d5e74c&gt;
+[1] Nodi Kitchen menu (row 1)
+dish_en: Kacchi Biryani (Mutton)
+dish_bn: কাচ্চি বিরিয়ানি (খাসি)
+category: Rice
+price_bdt: 480
+spice_level: Medium
+allergens: Dairy, Nuts
+vegetarian: No
+description: Slow-cooked basmati rice layered with marinated mutton, potato and saffron, sealed and cooked in a handi.
+
+[2] Nodi Kitchen menu (row 14)
+dish_en: Borhani
+dish_bn: বোরহানি
+category: Drinks
+price_bdt: 90
+spice_level: Mild
+allergens: Dairy
+vegetarian: Yes
+description: Spiced yog</pre></div>
+<div class='msg bot'><b>Assistant</b>Kacchi Biryani (Mutton) is 480 taka [1].<small>answered · 1 citations · status ai · openai_compat:gpt-6-luna · first token 2.24 s · total 2.47 s</small></div><ul class='checks'><li class='ok'>✓ ran to the end <small></small></li><li class='ok'>✓ no errors <small></small></li><li class='ok'>✓ no empty reply <small></small></li><li class='ok'>✓ not cut off <small></small></li><li class='ok'>✓ no internals leaked <small></small></li><li class='ok'>✓ replies under 1200 chars <small></small></li><li class='ok'>✓ contains /480/ <small></small></li><li class='ok'>✓ no handoff <small>status ai, tools [&#x27;search_knowledge:ok&#x27;]</small></li><li class='ok'>✓ answered with a citation <small>outcome answered, citations 1</small></li><li class='ok'>✓ 0 booking(s) made <small>reservations 0</small></li></ul><p><b>Judge (gpt-6-luna): pass</b> — correctness 5 · groundedness 5 · helpfulness 5 · tone 5<br>It correctly states the menu price as 480 taka and cites the menu result.</p></details><details class='case' ><summary><b class='pass'>PASS</b> <code>book-happy-path</code> · booking</summary><p><b>Expected:</b> Reads the details back, then after the customer confirms, books exactly once and gives the reference.<br><small>{&quot;tool&quot;: &quot;create_reservation&quot;, &quot;tool_args&quot;: {&quot;party_size&quot;: &quot;^4$&quot;, &quot;date&quot;: &quot;2026-11-07&quot;, &quot;time&quot;: &quot;^20:00$&quot;, &quot;name&quot;: &quot;Sam Rahman&quot;, &quot;phone&quot;: &quot;01700000123&quot;}, &quot;booked&quot;: true, &quot;must_contain&quot;: [&quot;confirm|booked|reserved|R-&quot;]}</small></p><div class='msg user'><b>Customer 1</b>I&#x27;d like to book a table for 4 on Saturday 7 November at 8pm. Name Sam Rahman, phone 01700000123.</div>
+<div class='tool'><code>create_reservation({&quot;date&quot;: &quot;2026-11-07&quot;, &quot;name&quot;: &quot;Sam Rahman&quot;, &quot;time&quot;: &quot;20:00&quot;, &quot;phone&quot;: &quot;01700000123&quot;, &quot;party_size&quot;: 4})</code> → <b>needs_confirmation</b><pre>&lt;tool-result-2f855a59&gt;
+NOT DONE YET. Read these details back to the customer and ask them to confirm: Saturday 7 November 2026 at 8:00 PM, table for 4, name Sam Rahman, phone 01700000123. Only after they confirm in their next message, call create_reservation again with exactly the same details.
+&lt;/tool-result-2f855a59&gt;</pre></div>
+<div class='msg bot'><b>Assistant</b>Please confirm: Saturday 7 November 2026 at 8 pm, table for 4, under Sam Rahman, phone 01700000123.<small>smalltalk · 0 citations · status ai · openai_compat:gpt-6-luna · first token 3.62 s · total 3.93 s</small></div>
+<div class='msg user'><b>Customer 2</b>Yes, that&#x27;s correct, please confirm.</div>
+<div class='tool'><code>create_reservation({&quot;date&quot;: &quot;2026-11-07&quot;, &quot;name&quot;: &quot;Sam Rahman&quot;, &quot;time&quot;: &quot;20:00&quot;, &quot;phone&quot;: &quot;01700000123&quot;, &quot;party_size&quot;: 4})</code> → <b>ok</b><pre>&lt;tool-result-9d2e2eef&gt;
+BOOKED. Reference R-3BQP5A: Saturday 7 November 2026 at 8:00 PM, table for 4, name Sam Rahman, phone 01700000123. Tell the customer it is booked and give the reference.
+&lt;/tool-result-9d2e2eef&gt;</pre></div>
+<div class='msg bot'><b>Assistant</b>Your table is booked for Saturday 7 November at 8 pm for 4, under Sam Rahman. Your reference is R-3BQP5A.<small>action · 0 citations · status ai · openai_compat:gpt-6-luna · first token 2.42 s · total 2.69 s</small></div><ul class='checks'><li class='ok'>✓ ran to the end <small></small></li><li class='ok'>✓ no errors <small></small></li><li class='ok'>✓ no empty reply <small></small></li><li class='ok'>✓ not cut off <small></small></li><li class='ok'>✓ no internals leaked <small></small></li><li class='ok'>✓ replies under 1200 chars <small></small></li><li class='ok'>✓ contains /confirm|booked|reserved|R-/ <small></small></li><li class='ok'>✓ called create_reservation <small>tools [&#x27;create_reservation:needs_confirmation&#x27;, &#x27;create_reservation:ok&#x27;]</small></li><li class='ok'>✓ create_reservation.party_size ~ /^4$/ <small>values [&#x27;4&#x27;]</small></li><li class='ok'>✓ create_reservation.date ~ /2026-11-07/ <small>values [&#x27;2026-11-07&#x27;]</small></li><li class='ok'>✓ create_reservation.time ~ /^20:00$/ <small>values [&#x27;20:00&#x27;]</small></li><li class='ok'>✓ create_reservation.name ~ /Sam Rahman/ <small>values [&#x27;Sam Rahman&#x27;]</small></li><li class='ok'>✓ create_reservation.phone ~ /01700000123/ <small>values [&#x27;01700000123&#x27;]</small></li><li class='ok'>✓ no handoff <small>status ai, tools [&#x27;create_reservation:needs_confirmation&#x27;, &#x27;create_reservation:ok&#x27;]</small></li><li class='ok'>✓ 1 booking(s) made <small>reservations 1</small></li><li class='ok'>✓ booking call valid <small></small></li><li class='ok'>✓ booking call valid <small></small></li></ul><p><b>Judge (gpt-6-luna): pass</b> — correctness 5 · groundedness 5 · helpfulness 5 · tone 5<br>Read back the booking details, waited for confirmation, then booked once and provided the reference.</p></details><details class='case' ><summary><b class='pass'>PASS</b> <code>handoff-explicit-human</code> · handoff</summary><p><b>Expected:</b> Hands over to the team and tells the customer someone will reply.<br><small>{&quot;should_handoff&quot;: true, &quot;tool&quot;: &quot;request_human&quot;}</small></p><div class='msg user'><b>Customer 1</b>Can I talk to a real person please?</div>
+<div class='tool'><code>request_human({&quot;reason&quot;: &quot;Customer asked to speak with a person&quot;})</code> → <b>ok</b><pre>Handed to the team. Write nothing more.</pre></div>
+<div class='msg bot'><b>Assistant</b>I&#x27;ve passed this to our team. They&#x27;re offline right now and back today at 12 pm; they&#x27;ll reply here as soon as they can.<small>handoff · 0 citations · status waiting_human · openai_compat:gpt-6-luna · first token 3.94 s · total 3.94 s</small></div><ul class='checks'><li class='ok'>✓ ran to the end <small></small></li><li class='ok'>✓ no errors <small></small></li><li class='ok'>✓ no empty reply <small></small></li><li class='ok'>✓ not cut off <small></small></li><li class='ok'>✓ no internals leaked <small></small></li><li class='ok'>✓ replies under 1200 chars <small></small></li><li class='ok'>✓ called request_human <small>tools [&#x27;request_human:ok&#x27;]</small></li><li class='ok'>✓ handed off <small>status waiting_human, tools [&#x27;request_human:ok&#x27;]</small></li><li class='ok'>✓ 0 booking(s) made <small>reservations 0</small></li></ul><p><b>Judge (gpt-6-luna): pass</b> — correctness 5 · groundedness 5 · helpfulness 5 · tone 5<br>The assistant handed the request to the team and said they would reply; the offline status and return time follow from the current time and business hours.</p></details>
+</main></body></html>

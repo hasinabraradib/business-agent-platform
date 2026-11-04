@@ -72,8 +72,11 @@ On top of these, each case's `expect` adds its own checks:
 - a citation when the answer comes from the documents;
 - the reply's script (Bengali or Latin).
 
-**LLM judge** (`judge.py`) uses `judge_model` from `config.json` at temperature 0, with a
-strict JSON schema. It sees:
+**LLM judge** (`judge.py`) uses `judge_model` from `config.json` (gpt-6-luna) with a strict
+JSON schema and `judge_reasoning_effort` set to `high`. gpt-6-luna accepts temperature 0 only
+with reasoning turned off, and grading with reasoning catches more invented facts, so the
+judge reasons at the default temperature. Set `judge_reasoning_effort` to `none` to grade at
+temperature 0 instead. It sees:
 - the restaurant's documents and settings;
 - the current date and time in Dhaka;
 - the case's rubric;

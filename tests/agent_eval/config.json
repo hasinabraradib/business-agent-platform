@@ -1,16 +1,31 @@
 {
   "_comment": "Agent stress test settings. Prices are USD per million tokens; keep the source line current when you change models.",
-  "assistant_model": "PENDING",
-  "judge_model": "PENDING",
-  "_prices_source": "PENDING",
+  "assistant_model": "openai_compat:gpt-6-luna",
+  "judge_model": "gpt-6-luna",
+  "_prices_source": "developers.openai.com/api/docs/pricing, checked 2026-11-05 (standard tier; cached input is cheaper, so estimates are upper bounds)",
   "assistant_prices": {
-    "openai_compat:openai/gpt-oss-120b": {"input": 0.15, "output": 0.6},
-    "gemini:gemini-3.6-flash": {"input": 0.75, "output": 3.75},
-    "gemini:gemini-3.8-flash": {"input": 0.75, "output": 3.75},
-    "PENDING": {"input": 0, "output": 0}
+    "openai_compat:openai/gpt-oss-120b": {
+      "input": 0.15,
+      "output": 0.6
+    },
+    "gemini:gemini-3.6-flash": {
+      "input": 0.75,
+      "output": 3.75
+    },
+    "gemini:gemini-3.8-flash": {
+      "input": 0.75,
+      "output": 3.75
+    },
+    "openai_compat:gpt-6-luna": {
+      "input": 0.1,
+      "output": 0.5
+    }
   },
   "judge_prices": {
-    "PENDING": {"input": 0, "output": 0}
+    "gpt-6-luna": {
+      "input": 0.1,
+      "output": 0.5
+    }
   },
   "estimate": {
     "_source": "evals/config.json measured 2026-10-04: ~2,600 prompt tokens per request, 1.6 requests per turn; padded for the longer conversations here",
@@ -18,8 +33,10 @@
     "input_tokens_per_request": 3200,
     "output_tokens_per_request": 250,
     "judge_input_tokens": 5500,
-    "judge_output_tokens": 150
+    "judge_output_tokens": 1200,
+    "_judge_output_note": "reasoning tokens are billed as output; high effort can use ~1,000 per grade"
   },
   "budget_usd_total": 5.0,
-  "chat_turns_per_minute": 50
+  "chat_turns_per_minute": 50,
+  "judge_reasoning_effort": "high"
 }

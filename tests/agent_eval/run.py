@@ -240,7 +240,13 @@ async def main(args) -> int:
             judge = (
                 None
                 if args.no_judge
-                else Judge(openai_key, CONFIG["judge_model"], business, now_text)
+                else Judge(
+                    openai_key,
+                    CONFIG["judge_model"],
+                    business,
+                    now_text,
+                    reasoning_effort=CONFIG.get("judge_reasoning_effort"),
+                )
             )
             done = 0
 
@@ -365,6 +371,13 @@ def summarize(rows, judged: bool) -> dict:
             "per_conversation": round(sum(r["assistant_cost_usd"] for r in rows) / len(rows), 5),
         },
         "unpriced_turns": sum(r["unpriced_turns"] for r in rows),
+        # Turns answered by a fallback model: the run then measures a mix of models.
+        "fallback_turns": sum(
+            1
+            for r in rows
+            for turn in r["transcript"]["turns"]
+            if turn.get("model") and turn["model"] != CONFIG["assistant_model"]
+        ),
     }
 
 

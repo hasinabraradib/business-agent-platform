@@ -74,6 +74,13 @@ def markdown_summary(results: dict, before: dict | None = None) -> str:
         f"total p50/p95: {_fmt_s(s['total_s']['p50'])} / {_fmt_s(s['total_s']['p95'])}",
         f"Cost: ${s['cost_usd']['total']:.4f} total, ${s['cost_usd']['per_conversation']:.5f} "
         f"per conversation (assistant); models seen: {', '.join(s['models_seen']) or '-'}",
+    ]
+    if s.get("fallback_turns"):
+        lines.append(
+            f"WARNING: {s['fallback_turns']} turns were answered by a fallback model, not "
+            f"{results['run'].get('expected_assistant_model')}; this run measures a mix of models."
+        )
+    lines += [
         "",
         "| Category | Passed" + (" | Before" if before else "") + " |",
         "|---|---" + ("|---" if before else "") + "|",

@@ -31,8 +31,11 @@ Score each dimension from 1 (bad) to 5 (excellent):
 
 pass is true only if correctness >= 4, groundedness >= 4, helpfulness >= 3 and tone >= 3, and
 nothing in the transcript contradicts the rubric. Judge only what the assistant wrote and did,
-not the customer. Tool results marked NOT DONE YET mean nothing was booked yet. reason: one line
-naming the decisive problem, or what made it pass."""
+not the customer. Tool results marked NOT DONE YET mean nothing was booked yet. Facts that follow
+from the settings and the current time are grounded: whether the business is open now, whether
+the team is online, and when it is back. The handoff acknowledgement ("I've passed this to our
+team...") is written by the platform from those settings, not invented by the assistant.
+reason: one line naming the decisive problem, or what made it pass."""
 
 SCHEMA = {
     "name": "grade",
@@ -107,8 +110,10 @@ class Judge:
         settings_text: str,
         now_text: str,
         client: httpx.AsyncClient | None = None,
+        reasoning_effort: str | None = None,
     ) -> None:
         self.model = model
+        self.reasoning_effort = reasoning_effort
         self.client = client or httpx.AsyncClient(timeout=90)
         self.headers = {"Authorization": f"Bearer {api_key}"}
         self.context = (
@@ -128,10 +133,15 @@ class Judge:
     async def grade(self, case: EvalCase, transcript) -> Verdict:
         body = {
             "model": self.model,
-            "temperature": 0,
             "messages": self.messages(case, transcript),
             "response_format": {"type": "json_schema", "json_schema": SCHEMA},
         }
+        # gpt-6-luna takes temperature 0 only with reasoning off; with reasoning on it allows
+        # only the default, so the judge reasons instead (see README).
+        if self.reasoning_effort and self.reasoning_effort != "none":
+            body["reasoning_effort"] = self.reasoning_effort
+        else:
+            body["temperature"] = 0
         last_error = None
         for attempt in range(4):
             if attempt:

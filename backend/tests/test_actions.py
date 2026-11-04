@@ -223,7 +223,7 @@ async def test_proposing_and_confirming_in_the_same_turn_does_not_book(
         ({"time": "03:00"}, "outside opening hours"),
         ({"date": "2026-10-03", "time": "19:00"}, "in the past"),  # 19:00 Dhaka < 19:30 now
         ({"date": "2026-10-09", "time": "13:00"}, "outside opening hours"),  # Friday before 14:30
-        ({"party_size": 15}, "limited to 8 people"),
+        ({"party_size": 15}, "take at most 8 people"),
         ({"date": "2027-03-01"}, "up to 60 days ahead"),
     ],
 )
@@ -401,3 +401,22 @@ def test_reservation_guidance_states_the_party_limit_and_hours() -> None:
     guidance = tool.guidance(settings)
     assert "at most 6 people" in guidance
     assert "Fri 14:30-23:00" in guidance and "don't collect details" in guidance
+
+
+def test_reservation_guidance_forbids_placeholders_and_guessed_details() -> None:
+    # gpt-6-luna called create_reservation with name "unknown", party 1 and a guessed 19:00
+    # before the customer had given them.
+    guidance = (
+        registry()
+        .get("create_reservation")
+        .guidance(TenantChatSettings.from_tenant("Cafe", restaurant_settings()))
+    )
+    assert "only once the customer has given all five in their own words" in guidance
+    assert "never pick a time for 'evening'" in guidance and "7 to 15 digits" in guidance
+
+
+@pytest.mark.parametrize("name", ["unknown", "N/A", " Unknown. ", "guest"])
+async def test_placeholder_names_are_rejected(app_engine, cafe, name) -> None:
+    context = make_context(app_engine, cafe.id, restaurant_settings())
+    content, record = await call(context, "create_reservation", {**BOOKING, "name": name})
+    assert record.status == "invalid_arguments" and "never use a placeholder" in content

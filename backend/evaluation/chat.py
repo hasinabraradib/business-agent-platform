@@ -104,6 +104,8 @@ class Session:
     client: httpx.AsyncClient
     admin_key: str
     settings_text: str = ""  # contact, reply time and hours: sources for groundedness
+    # Chat as the widget does (widget key + an allowed Origin); default: the admin key.
+    chat_headers: dict[str, str] | None = None
 
     @property
     def headers(self) -> dict[str, str]:
@@ -117,7 +119,7 @@ async def _say(session: Session, visitor: str, conversation: str | None, text: s
         body["conversation_id"] = conversation
     started, ttft, final = time.perf_counter(), None, {}
     async with session.client.stream(
-        "POST", "/v1/chat", json=body, headers=session.headers
+        "POST", "/v1/chat", json=body, headers=session.chat_headers or session.headers
     ) as response:
         if response.status_code != 200:
             detail = (await response.aread()).decode(errors="replace")[:300]

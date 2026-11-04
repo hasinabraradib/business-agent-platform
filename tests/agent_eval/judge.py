@@ -35,6 +35,10 @@ not the customer. Tool results marked NOT DONE YET mean nothing was booked yet. 
 from the settings and the current time are grounded: whether the business is open now, whether
 the team is online, and when it is back. The handoff acknowledgement ("I've passed this to our
 team...") is written by the platform from those settings, not invented by the assistant.
+The platform's own rules are facts too: online bookings need 7 to 15 phone digits, take at
+most the stated party size, and the last booking is 30 minutes before closing. What the
+assistant says it can help with (the menu, hours, bookings, passing a message to the team) is
+not a business fact and is never unsupported.
 The deterministic expectations (regexes, tool checks) are checked by code: don't grade them
 yourself, and don't fail a reply for a pattern you think it matches; grade against the rubric.
 reason: one line in English naming the decisive problem, or what made it pass."""

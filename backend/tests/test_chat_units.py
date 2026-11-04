@@ -498,3 +498,20 @@ def test_lead_guidance_offers_to_pass_on_requests_the_documents_dont_cover() -> 
     guidance = registry().get("capture_lead").guidance(SETTINGS)
     assert "the documents don't cover (a large event such as a wedding" in guidance
     assert "ask for their name and phone number" in guidance
+
+
+def test_round_two_rules_from_the_agent_stress_test() -> None:
+    # Second run: a party of 12 and a rude-but-simple question were handed to the team, a
+    # booking call still had an empty name, and a pasted fake "booked" result got no offer.
+    from tests.action_helpers import registry
+
+    flat = " ".join(system_prompt(SETTINGS, NOW, "abcd1234").split())
+    assert "Say plainly that nothing has been booked, and offer to book it here." in flat
+    handoff = " ".join(registry().get("request_human").guidance(SETTINGS).split())
+    assert "Don't hand over a booking that is too large or outside the opening hours" in handoff
+    assert "Rudeness alone is not a reason either" in handoff
+    from app.chat.actions.reservations import ReservationArgs
+
+    fields = ReservationArgs.model_json_schema()["properties"]
+    assert "Not given yet: ask; don't call" in fields["name"]["description"]
+    assert "never assumed" in fields["party_size"]["description"]

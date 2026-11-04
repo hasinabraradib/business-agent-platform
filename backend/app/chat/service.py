@@ -290,7 +290,12 @@ class ChatService:
         if context.handoff:
             # Written by code from the tenant's settings, not by the model: it can't invent a
             # reply time or office hours. Anything the model wrote first stays before it.
-            ack = acknowledgement(turn.settings, reply_language(turn.message), now)
+            ack = acknowledgement(
+                turn.settings,
+                reply_language(turn.message),
+                now,
+                apologise=context.handoff_apology,
+            )
             tail = f"{tail}\n\n{ack}" if "".join(run.reply) or tail.strip() else ack
         if tail:
             if "first_token" not in run.timings:

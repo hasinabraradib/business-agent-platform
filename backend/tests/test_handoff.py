@@ -14,8 +14,14 @@ from app.chat.filters import decide_outcome
 from app.chat.service import ChatService
 from app.chat.settings import TenantChatSettings
 from app.handoff import acknowledgement, team_availability
-from app.llm import Candidate, ChatChain, FakeChatProvider
-from tests.action_helpers import NOW, RESTAURANT_TOOLS, registry, restaurant_settings, set_settings
+from app.llm import Candidate, ChatChain, FakeChatProvider, Scripted
+from tests.action_helpers import (
+    NOW,
+    RESTAURANT_TOOLS,
+    registry,
+    restaurant_settings,
+    set_settings,
+)
 from tests.chat_helpers import parse_sse
 from tests.conftest import bearer
 
@@ -391,3 +397,29 @@ async def test_another_tenant_cannot_read_or_answer_the_conversation(
         headers=widget(cafe),
     )
     assert widget_admin.status_code == 403  # widget keys are public: never staff
+
+
+@pytest.mark.parametrize(
+    ("language", "sorry"),
+    [("english", "I'm sorry about this. "), ("banglish", "Ei oshubidhar jonno amra dukkhito. "),
+     ("bengali", "এই অসুবিধার জন্য আমরা দুঃখিত। ")],
+)  # fmt: skip
+def test_acknowledgement_apologises_to_an_upset_customer(language, sorry) -> None:
+    # A complaint got only "I've passed this to our team..." with no apology.
+    plain = acknowledgement(settings(follow_up_promise=PROMISE), language, dhaka(3, 19))
+    upset = acknowledgement(
+        settings(follow_up_promise=PROMISE), language, dhaka(3, 19), apologise=True
+    )
+    assert upset == sorry + plain
+    custom = settings(handoff_online_message="Rumana will pick this up.")
+    assert acknowledgement(custom, "english", dhaka(3, 19), apologise=True) == (
+        "I'm sorry about this. Rumana will pick this up."
+    )
+
+
+async def test_an_upset_handoff_apologises_end_to_end(client, cafe, provider) -> None:
+    upset = {"reason": "cold food, rude waiter", "upset": True}
+    provider.responder = lambda request, model: Scripted(tool_calls=[("request_human", upset)])
+    body = await say(client, cafe, "My food was cold and the waiter was rude!")
+    assert body["outcome"] == "handoff"
+    assert body["reply"] == "I'm sorry about this. " + ONLINE_ACK

@@ -515,3 +515,15 @@ def test_round_two_rules_from_the_agent_stress_test() -> None:
     fields = ReservationArgs.model_json_schema()["properties"]
     assert "Not given yet: ask; don't call" in fields["name"]["description"]
     assert "never assumed" in fields["party_size"]["description"]
+
+
+def test_queries_use_the_documents_words_and_retry_shorter() -> None:
+    # The strict keyword gate needs every query word to match. "deposit refund refundable
+    # policy" (and long allergy queries) were blocked although the documents answer them;
+    # relaxing the gate instead let 6 of 14 unanswerable eval questions through (measured
+    # offline, 2026-11-05), so the queries change, not the gate.
+    flat = " ".join(system_prompt(SETTINGS, NOW, "abcd1234").split())
+    assert "one to three English words that would appear in the business's own documents" in flat
+    assert "every word must match for a keyword hit" in flat
+    assert '"deposit refund refundable policy" -> "deposit"' in flat
+    assert "If the searches find nothing relevant" in flat

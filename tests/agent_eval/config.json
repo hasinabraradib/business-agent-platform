@@ -1,0 +1,25 @@
+{
+  "_comment": "Agent stress test settings. Prices are USD per million tokens; keep the source line current when you change models.",
+  "assistant_model": "PENDING",
+  "judge_model": "PENDING",
+  "_prices_source": "PENDING",
+  "assistant_prices": {
+    "openai_compat:openai/gpt-oss-120b": {"input": 0.15, "output": 0.6},
+    "gemini:gemini-3.6-flash": {"input": 0.75, "output": 3.75},
+    "gemini:gemini-3.8-flash": {"input": 0.75, "output": 3.75},
+    "PENDING": {"input": 0, "output": 0}
+  },
+  "judge_prices": {
+    "PENDING": {"input": 0, "output": 0}
+  },
+  "estimate": {
+    "_source": "evals/config.json measured 2026-10-04: ~2,600 prompt tokens per request, 1.6 requests per turn; padded for the longer conversations here",
+    "requests_per_turn": 1.7,
+    "input_tokens_per_request": 3200,
+    "output_tokens_per_request": 250,
+    "judge_input_tokens": 5500,
+    "judge_output_tokens": 150
+  },
+  "budget_usd_total": 5.0,
+  "chat_turns_per_minute": 50
+}

@@ -44,6 +44,7 @@ def _when(back_at: datetime, now: datetime, language: str) -> str:
 
 ACKNOWLEDGEMENTS = {
     "english": {
+        "sorry": "I'm sorry about this.",
         "lead": "I've passed this to our team.",
         "online": " They're online now and will reply here soon.",
         "offline": " They're offline right now and back {when}; they'll reply here {reply}.",
@@ -51,6 +52,7 @@ ACKNOWLEDGEMENTS = {
         "later": "as soon as they can",
     },
     "banglish": {
+        "sorry": "Ei oshubidhar jonno amra dukkhito.",
         "lead": "Apnar message amader team ke pathiye diyechi.",
         "online": " Team ekhon online ache, kichukkhoner moddhei ekhanei reply dibe.",
         "offline": " Team ekhon offline, {when} abar online hobe; {reply} ekhanei reply dibe.",
@@ -58,6 +60,7 @@ ACKNOWLEDGEMENTS = {
         "later": "jototara shombhob druto",
     },
     "bengali": {
+        "sorry": "এই অসুবিধার জন্য আমরা দুঃখিত।",
         "lead": "আপনার বার্তা আমাদের টিমের কাছে পাঠিয়েছি।",
         "online": " টিম এখন অনলাইনে আছে, কিছুক্ষণের মধ্যেই এখানে উত্তর দেবে।",
         "offline": " টিম এখন অফলাইনে, {when} আবার অনলাইনে আসবে; {reply} এখানেই উত্তর দেবে।",
@@ -67,7 +70,19 @@ ACKNOWLEDGEMENTS = {
 }
 
 
-def acknowledgement(settings: TenantChatSettings, language: str, now: datetime) -> str:
+def acknowledgement(
+    settings: TenantChatSettings, language: str, now: datetime, *, apologise: bool = False
+) -> str:
+    """See _acknowledgement; with apologise (an upset customer or a complaint) it starts with a
+    short apology in the customer's language, also before the tenant's own wording."""
+    text = _acknowledgement(settings, language, now)
+    if not apologise:
+        return text
+    sorry = ACKNOWLEDGEMENTS.get(language, ACKNOWLEDGEMENTS["english"])["sorry"]
+    return f"{sorry} {text}"
+
+
+def _acknowledgement(settings: TenantChatSettings, language: str, now: datetime) -> str:
     """The one message a customer gets when the conversation is handed to the team, in their
     language. Online now: they'll reply here soon (a reply time like "within one working day"
     next to "online now" reads as a contradiction). Offline: when the team is back, and the

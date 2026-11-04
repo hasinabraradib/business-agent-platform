@@ -24,6 +24,11 @@ def normalize_phone(value: str) -> str:
     return digits
 
 
+PLACEHOLDER_NAMES = {
+    "unknown", "n/a", "na", "none", "-", "?", "tbd", "customer", "guest", "name", "not given",
+}  # fmt: skip
+
+
 class ReservationArgs(ToolArgs):
     date: dt.date = Field(description="Reservation date, YYYY-MM-DD (resolve 'tomorrow' yourself)")
     time: str = Field(pattern=r"^([01]\d|2[0-3]):[0-5]\d$", description="24-hour HH:MM, e.g. 20:00")
@@ -36,6 +41,14 @@ class ReservationArgs(ToolArgs):
     @classmethod
     def _phone(cls, value: str) -> str:
         return normalize_phone(value)
+
+    @field_validator("name")
+    @classmethod
+    def _real_name(cls, value: str) -> str:
+        # gpt-6-luna called the tool with name "unknown" before the customer had given one.
+        if value.strip().strip(".").casefold() in PLACEHOLDER_NAMES:
+            raise ValueError("ask the customer for their name; never use a placeholder")
+        return value.strip()
 
 
 def _minutes(hhmm: str) -> int:
@@ -93,7 +106,11 @@ class CreateReservationTool(WriteTool):
             "or a time outside these hours, don't collect details: say so and give the contact. "
             "A time after midnight 'tonight' (e.g. 3 am) is on the next date.\n"
             "- Reservations: collect date, time, party size, name and phone conversationally "
-            "(ask only for what is missing), then call create_reservation. It answers NOT DONE "
+            "(ask only for what is missing, in one short question). Call create_reservation only "
+            "once the customer has given all five in their own words: never fill a gap with a "
+            "placeholder or a default, and never pick a time for 'evening' or 'tonight' or a "
+            "party size yourself. A phone number needs 7 to 15 digits; if it has fewer, ask for "
+            "the full number before calling. Then call create_reservation. It answers NOT DONE "
             "YET with the details: read them back and ask the customer to confirm. When they "
             "confirm, call it again with exactly the same details. Never say a table is booked "
             "unless the tool says it is booked. If it refuses (closed, past, too large a party), "
@@ -121,8 +138,9 @@ class CreateReservationTool(WriteTool):
         if args.party_size > settings.max_online_party_size:
             return (
                 f"Not booked: online bookings are limited to {settings.max_online_party_size} "
-                f"people. Do not book. Tell the customer a group this size needs to talk to the "
-                f"team, and give the contact: {contact}"
+                f"people. Do not book. Tell the customer that online bookings take at most "
+                f"{settings.max_online_party_size} people, so a group this size needs to talk to "
+                f"the team, and give the contact: {contact}"
             )
         if not settings.opening_hours:
             return f"Not booked: online booking is not set up. Give the contact: {contact}"

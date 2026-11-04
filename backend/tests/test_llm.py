@@ -268,6 +268,8 @@ async def test_openai_compat_streams_text_with_usage() -> None:
     assert body["stream_options"] == {"include_usage": True}
     assert body["messages"][0] == {"role": "system", "content": "Be brief."}
     assert body["reasoning_effort"] == "minimal"
+    # max_completion_tokens, never the deprecated max_tokens that OpenAI's newer models reject.
+    assert "max_tokens" not in body and body["max_completion_tokens"] > 0
 
 
 async def test_openai_compat_assembles_fragmented_tool_calls_and_converts_history() -> None:

@@ -49,7 +49,12 @@ class CaptureLeadTool(WriteTool):
             "- Callbacks, quotes, bulk or catering orders, or anything you cannot do: collect "
             "name, phone or email, and what they want, then call capture_lead; read the details "
             "back and call it again once they confirm. Then say the team will follow up; "
-            f"{timing}."
+            f"{timing}.\n"
+            "- When a customer asks for something the business might arrange but the documents "
+            "don't cover (a large event such as a wedding, a group bigger than the documents "
+            "mention, a special request), don't just refuse: say briefly what the documents do "
+            "say (with citations), that you'll pass the request to the team, and ask for their "
+            "name and phone number so the team can get back to them; then use capture_lead."
         )
 
     def identity(self, args: LeadArgs) -> dict:

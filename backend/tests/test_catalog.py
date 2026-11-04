@@ -230,6 +230,28 @@ async def test_query_catalog_empty_result(app_engine, menu) -> None:
     assert record.result_summary == "0 matching, 0 shown" and context.valid_markers == set()
 
 
+async def test_empty_results_name_the_real_fields_so_the_model_can_retry(app_engine, menu) -> None:
+    # gpt-6-luna filtered a menu by an invented {"name": "dietary"} attribute, got nothing back
+    # and told the customer there were no vegetarian dishes.
+    tenant, _ = menu
+    arguments = {"attributes": [{"name": "dietary", "contains": "vegetarian"}]}
+    content, record, _ = await query(app_engine, tenant, **arguments)
+    assert record.status == "ok" and "No catalogue items match" in content
+    assert "Unknown attribute(s): dietary." in content
+    assert "Categories: Desserts, Drinks, Rice, Vegetables." in content
+    assert "spice_level (e.g. Medium, Mild" in content and "allergens (e.g." in content
+    assert "search_knowledge" in content
+    guidance = QueryCatalogTool().guidance(None)
+    assert "An empty catalogue result does not mean the business doesn't have it" in guidance
+
+
+async def test_text_search_matches_attribute_values(app_engine, menu) -> None:
+    # "prawns" appears only in a dish's description; text search used to look at names only.
+    tenant, _ = menu
+    content, _, _ = await query(app_engine, tenant, text="mustard")
+    assert names(content) == ["Begun Bharta"]
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

@@ -110,6 +110,7 @@ class TurnContext:
     actions: list[ActionDone] = field(default_factory=list)  # writes completed this turn
     lookups: int = 0  # successful record lookups this turn (e.g. an order found)
     handoff: bool = False  # request_human ran: the turn ends with the code-written acknowledgement
+    handoff_apology: bool = False  # the customer was upset: the acknowledgement apologises first
     step: int = 0
 
     def add_source(self, chunk) -> int:

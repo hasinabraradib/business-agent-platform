@@ -13,6 +13,11 @@ class RequestHumanArgs(ToolArgs):
         max_length=300,
         description="Why, in a few words, e.g. 'asked for a person', 'upset about a late order'",
     )
+    upset: bool = Field(
+        default=False,
+        description="true when the customer is upset, angry or complaining: the message they "
+        "get then starts with an apology",
+    )
 
 
 class RequestHumanTool(Tool):
@@ -36,7 +41,9 @@ class RequestHumanTool(Tool):
             "question, answer from it (with its conditions and deadlines) instead of handing "
             "over again. Don't write a reply yourself: the customer automatically gets a message "
             "that the team will answer here. For a fact you simply can't find, say so and give "
-            "the contact instead. Never pretend to be the team member or claim to be human; if "
+            "the contact instead. Set upset to true for a complaint or an upset customer, so the "
+            "message starts with an apology. Never pretend to be the team member or claim to "
+            "be human; if "
             f"they ask whether you're a bot, say you're {settings.business_name}'s virtual "
             "assistant and offer to bring in the team."
         )
@@ -56,5 +63,6 @@ class RequestHumanTool(Tool):
                 context.tenant_id, context.conversation_id, "handoff"
             )
         context.handoff = True
+        context.handoff_apology = context.handoff_apology or args.upset
         summary = "handed to the team" if changed else "already with the team"
         return ToolResult("Handed to the team. Write nothing more.", summary=summary)

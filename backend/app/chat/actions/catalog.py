@@ -1,7 +1,7 @@
 from typing import Literal
 
 from pydantic import Field, model_validator
-from sqlalchemy import Select, func, or_
+from sqlalchemy import Select, Text, cast, func, or_
 
 from app.chat.prompts import CITE_REMINDER
 from app.chat.tools import Tool, ToolArgs, ToolResult, TurnContext, location
@@ -22,7 +22,8 @@ class QueryCatalogArgs(ToolArgs):
     text: str | None = Field(
         default=None,
         max_length=100,
-        description="Words to match in the item's name (English or Bengali) or category.",
+        description="Words to match in the item's name (English or Bengali), category or any "
+        "attribute such as its description.",
     )
     category: str | None = Field(default=None, max_length=60, description="e.g. 'Rice', 'Sarees'")
     min_price: float | None = Field(default=None, ge=0)
@@ -66,7 +67,11 @@ class QueryCatalogTool(Tool):
             "questions about dishes or products (e.g. 'which dishes have nuts?' -> attributes "
             '[{"name": "allergens", "contains": "nuts"}]; "500 takar niche" -> max_price 500). '
             "Use search_knowledge for everything else. Cite catalogue rows by their numbers "
-            "[n] like search results."
+            "[n] like search results.\n"
+            "- An empty catalogue result does not mean the business doesn't have it: the result "
+            "lists the catalogue's real categories and attributes, so retry with those, or call "
+            "search_knowledge (the documents may answer it, e.g. which dishes are vegan) before "
+            "telling the customer you couldn't find it."
         )
 
     def _filtered(self, context: TurnContext, query: Select, args: QueryCatalogArgs) -> Select:
@@ -77,6 +82,8 @@ class QueryCatalogTool(Tool):
                     CatalogItem.name.ilike(pattern),
                     CatalogItem.alt_name.ilike(pattern),
                     CatalogItem.category.ilike(pattern),
+                    # attribute values too, e.g. "prawns" in a dish's description
+                    cast(CatalogItem.attributes, Text).ilike(pattern),
                 )
             )
         if args.category:
@@ -136,7 +143,9 @@ class QueryCatalogTool(Tool):
                 parts.append(attributes)
             lines.append(marker + " | ".join(parts))
         if not lines:
-            body = "No catalogue items match these filters."
+            body = "No catalogue items match these filters. " + await self._fields_hint(
+                context, args
+            )
         else:
             body = f"{total} matching items, showing {len(lines)}:\n" + "\n".join(lines)
         content = f"<catalog-results-{context.nonce}>\n{body}\n</catalog-results-{context.nonce}>"
@@ -144,6 +153,53 @@ class QueryCatalogTool(Tool):
             f"{content}\n{CITE_REMINDER}" if lines else content,
             summary=f"{total} matching, {len(lines)} shown",
         )
+
+    async def _fields_hint(self, context: TurnContext, args: QueryCatalogArgs) -> str:
+        """What this catalogue can actually be filtered by, so the model can retry with real
+        fields (it invented e.g. {"name": "dietary"} for a menu whose column is vegetarian)."""
+        async with context.db() as db:
+            categories = [
+                c
+                for c in await db.scalars(
+                    db.select(CatalogItem)  # tenant-filtered, then narrowed to one column
+                    .with_only_columns(CatalogItem.category)
+                    .distinct()
+                    .order_by(CatalogItem.category)
+                )
+                if c
+            ]
+            rows = await db.scalars(
+                db.select(CatalogItem).with_only_columns(CatalogItem.attributes).limit(200)
+            )
+            samples: dict[str, list[str]] = {}
+            for attributes in rows:
+                for key, value in (attributes or {}).items():
+                    values = samples.setdefault(key, [])
+                    text = str(value)
+                    if value and len(text) <= 30 and text not in values and len(values) < 4:
+                        values.append(text)
+        if not categories and not samples:
+            return "The catalogue is empty; use search_knowledge instead."
+        parts = []
+        unknown = [
+            a.name
+            for a in args.attributes or []
+            if a.name.strip().lower().replace(" ", "_") not in samples
+        ]
+        if unknown:
+            parts.append(f"Unknown attribute(s): {', '.join(unknown)}.")
+        if categories:
+            parts.append(f"Categories: {', '.join(categories[:15])}.")
+        if samples:
+            described = [
+                f"{key} (e.g. {', '.join(values)})" if values else key
+                for key, values in samples.items()
+            ]
+            parts.append(f"Attributes: {'; '.join(described)}.")
+        parts.append(
+            "Retry with these, or call search_knowledge: the documents may still answer it."
+        )
+        return " ".join(parts)
 
 
 class _ChunkView:

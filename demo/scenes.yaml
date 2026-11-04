@@ -1,0 +1,84 @@
+# Demo video script, read by demo/record_demo.py. Edit the text here; no code changes needed.
+#
+# Scene kinds:
+#   card       a full-screen title or end card (headline, subline, hold_s)
+#   site       the restaurant site: load, scroll, open the chat widget
+#   chat       customer messages typed into the widget; each `expect` is a list of regexes
+#              (case-insensitive) the finished reply must match, `sources: true` requires
+#              source chips under the reply, `hold_s` is how long to keep the answer on screen
+#   dashboard  the admin dashboard: inbox, the conversation, its run trace, bookings and leads
+# Each chat scene starts a fresh conversation, so a retried scene leaves no trace in the video.
+
+video:
+  width: 1920
+  height: 1080
+  type_delay_ms: 40
+  default_hold_s: 2.5
+  retries: 3
+
+site_url: http://localhost:8090
+dashboard_url: http://localhost:3001
+
+scenes:
+  - id: title
+    kind: card
+    headline: "Your website's 24/7 front desk"
+    subline: "An AI assistant that answers, books and hands off, for local businesses"
+    hold_s: 3
+
+  - id: site
+    kind: site
+    caption: "A customer visits your site at 11pm..."
+    scroll_to: "#menu"
+    hold_s: 1.5
+
+  - id: vegan
+    kind: chat
+    caption: "Answers from YOUR menu, with sources."
+    messages:
+      - say: "Do you have vegan options? What's your best one?"
+        expect: ["cauliflower"]
+        sources: true
+        hold_s: 3
+
+  - id: booking
+    kind: chat
+    caption: "Books tables automatically."
+    thumbnail: true
+    messages:
+      - say: "Can I book a table for 4 this Friday at 7pm?"
+        expect: ["name", "phone|number"]
+        hold_s: 1.5
+      - say: "Maria Lopez, 512-555-0187"
+        expect: ["confirm|correct|right", "7"]
+        hold_s: 1.5
+      - say: "Yes, please book it."
+        expect: ["booked|confirmed|reserved|reference|R-"]
+        hold_s: 3
+
+  - id: handoff
+    kind: chat
+    caption: "Never makes things up. Hands off to your staff."
+    messages:
+      - say: "Can you host a 40-person wedding reception?"
+        expect: ["team|staff|events|pass|someone"]
+        not_expect: ["yes,? we (can|do) host|we can accommodate 40"]
+        hold_s: 2
+      - say: "Sure, I'm Maria Lopez, 512-555-0187"
+        expect: ["Maria|512|team|touch|confirm"]
+        hold_s: 1.5
+      - say: "Yes, that's right."
+        expect: ["team|touch|contact|pass|soon|reply"]
+        hold_s: 3
+
+  - id: dashboard
+    kind: dashboard
+    caption: "You see every conversation and every lead."
+    hold_s: 2
+
+  - id: end
+    kind: card
+    headline: "Want a free demo built on your business?"
+    subline: "Reply to my email."
+    signature: "Sayed Hasanul Zayed"
+    hold_s: 4

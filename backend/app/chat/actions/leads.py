@@ -58,11 +58,11 @@ class CaptureLeadTool(WriteTool):
         )
 
     def identity(self, args: LeadArgs) -> dict:
-        return {
-            "name": args.name.casefold(),
-            "contact": args.contact,
-            "interest": " ".join(args.interest.casefold().split()),
-        }
+        # Who to call back, not the wording of the request: gpt-6-luna rephrased the request
+        # when the customer confirmed ("asking about a 40-person wedding" vs "a 40-person
+        # wedding reception"), which read as a new proposal and asked them to confirm again.
+        # The confirming call's wording is the one saved.
+        return {"name": args.name.casefold(), "contact": args.contact}
 
     def read_back(self, context: TurnContext, args: LeadArgs) -> str:
         return f"name {args.name}, contact {args.contact}, request: {args.interest}"

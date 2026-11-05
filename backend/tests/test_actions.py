@@ -420,3 +420,24 @@ async def test_placeholder_names_are_rejected(app_engine, cafe, name) -> None:
     context = make_context(app_engine, cafe.id, restaurant_settings())
     content, record = await call(context, "create_reservation", {**BOOKING, "name": name})
     assert record.status == "invalid_arguments" and "never use a placeholder" in content
+
+
+async def test_a_lead_confirms_even_when_the_request_is_reworded(
+    client, cafe, owner_engine, provider
+) -> None:
+    # The confirming call rephrased the request; it used to count as a new proposal.
+    reworded = {**LEAD, "interest": "a wedding order of 50 sarees"}
+    calls = iter([LEAD, reworded])
+
+    def respond(request, model):
+        if request.messages[-1].role == "tool":
+            return tool_responder("capture_lead", LEAD)(request, model)
+        return Scripted(tool_calls=[("capture_lead", next(calls))])
+
+    provider.responder = respond
+    first = await say(client, cafe, "I want 50 sarees for a wedding, call me: Sadia 01811-222333")
+    second = await say(client, cafe, "yes that's right", first["conversation_id"])
+    assert second["retrieval"]["tools"][0]["status"] == "ok"
+    async with owner_engine.connect() as conn:
+        interests = (await conn.execute(text("SELECT interest FROM leads"))).scalars().all()
+    assert interests == ["a wedding order of 50 sarees"]

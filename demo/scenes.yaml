@@ -30,7 +30,7 @@ scenes:
     kind: site
     caption: "A customer visits your site at 11pm..."
     scroll_to: "#menu"
-    hold_s: 1.5
+    hold_s: 1
 
   - id: vegan
     kind: chat
@@ -39,7 +39,7 @@ scenes:
       - say: "Do you have vegan options? What's your best one?"
         expect: ["cauliflower"]
         sources: true
-        hold_s: 3
+        hold_s: 2.5
 
   - id: booking
     kind: chat
@@ -48,13 +48,13 @@ scenes:
     messages:
       - say: "Can I book a table for 4 this Friday at 7pm?"
         expect: ["name", "phone|number"]
-        hold_s: 1.5
+        hold_s: 1
       - say: "Maria Lopez, 512-555-0187"
         expect: ["confirm|correct|right", "7"]
-        hold_s: 1.5
+        hold_s: 1
       - say: "Yes, please book it."
         expect: ["booked|confirmed|reserved|reference|R-"]
-        hold_s: 3
+        hold_s: 2.5
 
   - id: handoff
     kind: chat
@@ -63,17 +63,18 @@ scenes:
       - say: "Can you host a 40-person wedding reception?"
         expect: ["team|staff|events|pass|someone"]
         not_expect: ["yes,? we (can|do) host|we can accommodate 40"]
-        hold_s: 2
+        hold_s: 1.2
       - say: "Sure, I'm Maria Lopez, 512-555-0187"
-        expect: ["Maria|512|team|touch|confirm"]
-        hold_s: 1.5
+        expect: ["Maria|512|team|touch|confirm|correct"]
+        hold_s: 0.8
       - say: "Yes, that's right."
-        expect: ["team|touch|contact|pass|soon|reply"]
-        hold_s: 3
+        expect: ["team|touch|contact|follow|soon|reply"]
+        hold_s: 2.5
 
   - id: dashboard
     kind: dashboard
     caption: "You see every conversation and every lead."
+    search: "wedding"
     hold_s: 2
 
   - id: end

@@ -26,7 +26,7 @@ for candidate in (Path.cwd(), HERE.parent / "backend"):  # /app in the image, ba
         sys.path.insert(0, str(candidate))
         break
 
-from sqlalchemy import func, select, update  # noqa: E402
+from sqlalchemy import delete, func, select, update  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from app.cli import owner_session  # noqa: E402
@@ -35,7 +35,15 @@ from app.embeddings import get_embedding_provider  # noqa: E402
 from app.ingestion.documents import create_upload_document  # noqa: E402
 from app.ingestion.pipeline import IngestDeps, process_document  # noqa: E402
 from app.ingestion.storage import get_storage  # noqa: E402
-from app.models import ApiKey, Document, Tenant  # noqa: E402
+from app.models import (  # noqa: E402
+    ApiKey,
+    Conversation,
+    Document,
+    Lead,
+    PendingAction,
+    Reservation,
+    Tenant,
+)
 from app.security import new_api_key  # noqa: E402
 from app.tenancy import tenant_db  # noqa: E402
 from app.tenants import create_tenant  # noqa: E402
@@ -155,7 +163,26 @@ async def rotate_widget_key(tenant_id) -> str:
     return created.full_key
 
 
+async def reset_activity() -> int:
+    """Delete the demo tenant's conversations, bookings and leads (never its documents, settings
+    or keys), so a recording shows only what it creates."""
+    async with owner_session() as session:
+        tenant_id = await session.scalar(select(Tenant.id).where(Tenant.slug == SLUG))
+        if tenant_id is None:
+            print(f"{SLUG}: no such tenant; run demo/seed.py first")
+            return 1
+        counts = {}
+        for model in (Reservation, Lead, PendingAction, Conversation):  # messages cascade
+            result = await session.execute(delete(model).where(model.tenant_id == tenant_id))
+            counts[model.__tablename__] = result.rowcount
+        await session.commit()
+    print(f"{SLUG}: activity reset ({', '.join(f'{n} {t}' for t, n in counts.items())})")
+    return 0
+
+
 async def main(args: argparse.Namespace) -> int:
+    if args.reset_activity:
+        return await reset_activity()
     tenant_id, admin_key = await ensure_tenant()
     if admin_key:
         print(f"  admin_key (shown once; for the dashboard): {admin_key}")
@@ -177,4 +204,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--site-config", help="write the widget key here for demo/site")
     parser.add_argument("--api", default="http://localhost:8000", help="API base for the widget")
+    parser.add_argument(
+        "--reset-activity",
+        action="store_true",
+        help="only delete the tenant's conversations, bookings and leads (before a recording)",
+    )
     sys.exit(asyncio.run(main(parser.parse_args())))

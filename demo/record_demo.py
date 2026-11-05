@@ -16,6 +16,7 @@ aborts rather than keep a bad answer.
 
 # ruff: noqa: E501  (embedded JavaScript, HTML and CSS read better unbroken)
 import argparse
+import contextlib
 import json
 import re
 import shutil
@@ -27,6 +28,7 @@ from pathlib import Path
 import yaml
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
@@ -148,38 +150,37 @@ def ask(page: Page, director: Director, text: str, timeout_s: float = 60) -> dic
     before = replies.count()
     director.type(w.locator("#bap-input"), text)
     director.click(w.locator("button[aria-label='Send message']"))
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        page.wait_for_timeout(250)
-        state = page.evaluate(
-            """() => {
+    # wait_for_function enforces its timeout; a polling loop of evaluate() calls once hung for
+    # half an hour when the page stopped responding.
+    try:
+        page.wait_for_function(
+            """before => {
               const root = document.querySelector('#bap-chat-widget').shadowRoot;
               const msgs = root.querySelectorAll('.msg.assistant, .msg.staff, .msg.error');
               const last = msgs[msgs.length - 1];
-              const send = root.querySelector("button[aria-label='Send message']");
-              const live = [...root.querySelectorAll('[aria-live=polite]')].map(n => n.textContent).join(' ');
-              return {count: msgs.length, typing: !!(last && last.querySelector('.typing')),
-                      busy: !!(send && send.disabled && root.querySelector('#bap-input').value === ''),
-                      live, text: last ? last.querySelector('.bubble')?.innerText || '' : '',
-                      error: !!(last && last.classList.contains('error')),
-                      sources: last ? last.querySelectorAll('.sources .chip').length : 0};
-            }"""
+              const live = [...root.querySelectorAll('[aria-live=polite]')]
+                .map(n => n.textContent).join(' ');
+              return msgs.length > before && !last.querySelector('.typing')
+                && !live.includes('typing')
+                && (last.querySelector('.bubble')?.innerText || '').trim().length > 0;
+            }""",
+            arg=before,
+            polling=250,
+            timeout=timeout_s * 1000,
         )
-        finished = state["count"] > before and not state["typing"] and "typing" not in state["live"]
-        if finished and state["text"].strip():
-            page.wait_for_timeout(600)  # let the last tokens and source chips render
-            final = page.evaluate(
-                """() => {
-                  const root = document.querySelector('#bap-chat-widget').shadowRoot;
-                  const msgs = root.querySelectorAll('.msg.assistant, .msg.staff, .msg.error');
-                  const last = msgs[msgs.length - 1];
-                  return {text: last.querySelector('.bubble')?.innerText || '',
-                          sources: last.querySelectorAll('.sources .chip').length,
-                          error: last.classList.contains('error')};
-                }"""
-            )
-            return final
-    raise SceneFailed(f"no finished reply within {timeout_s:.0f} s to: {text}")
+    except PlaywrightTimeout:
+        raise SceneFailed(f"no finished reply within {timeout_s:.0f} s to: {text}") from None
+    page.wait_for_timeout(600)  # let the last tokens and source chips render
+    return page.evaluate(
+        """() => {
+          const root = document.querySelector('#bap-chat-widget').shadowRoot;
+          const msgs = root.querySelectorAll('.msg.assistant, .msg.staff, .msg.error');
+          const last = msgs[msgs.length - 1];
+          return {text: last.querySelector('.bubble')?.innerText || '',
+                  sources: last.querySelectorAll('.sources .chip').length,
+                  error: last.classList.contains('error')};
+        }"""
+    )
 
 
 def check_reply(step: dict, reply: dict) -> list[str]:
@@ -238,10 +239,10 @@ def scene_site(page: Page, director: Director, scene: dict, cfg: dict) -> float:
     page.wait_for_timeout(300)
     start = director.mark()
     director.caption(scene.get("caption"))
-    director.hold(1.2)
+    director.hold(0.8)
     if target := scene.get("scroll_to"):
         page.evaluate("s => document.querySelector(s).scrollIntoView({behavior: 'smooth'})", target)
-        director.hold(1.6)
+        director.hold(1.2)
         page.evaluate("() => window.scrollTo({top: 0, behavior: 'smooth'})")
         director.hold(1.0)
     open_widget(page, director)
@@ -278,16 +279,19 @@ def scene_dashboard(
         raise SceneFailed(f"dashboard sign-in failed: HTTP {response.status}")
     page.goto(f"{base}/inbox", wait_until="networkidle")
     page.evaluate("() => window.__demo.install()")
-    conversation = page.get_by_role("link", name=re.compile("Waiting for team")).first
-    conversation.wait_for(timeout=15_000)
+    conversations = page.locator("main a[href^='/inbox/']")
+    conversations.first.wait_for(timeout=15_000)
     start = director.mark()
     director.caption(scene.get("caption"))
-    director.hold(1.8)
-    director.click(conversation)
+    director.hold(1.0)
+    if term := scene.get("search"):  # find this conversation the way an owner would
+        director.type(page.get_by_label("Search conversations"), term)
+        page.wait_for_timeout(900)  # the inbox search is debounced
+    director.click(conversations.first)
     page.wait_for_load_state("networkidle")
     page.evaluate("() => window.__demo.install()")
     director.caption(scene.get("caption"))
-    director.hold(2.5)
+    director.hold(1.8)
     trace = page.get_by_role("link", name="View trace").last
     if trace.count():
         director.click(trace)
@@ -308,6 +312,14 @@ def scene_dashboard(
 # --- keys --------------------------------------------------------------------------------------
 
 
+def reset_activity() -> None:
+    subprocess.run(
+        ["docker", "compose", "run", "--rm", "--no-deps", "-T", "migrate", "python",
+         "/demo/seed.py", "--reset-activity"],
+        cwd=REPO, check=True,
+    )  # fmt: skip
+
+
 def create_admin_key() -> str:
     out = subprocess.run(
         ["docker", "compose", "run", "--rm", "--no-deps", "-T", "migrate", "python", "-m",
@@ -321,17 +333,27 @@ def create_admin_key() -> str:
 
 
 def revoke_admin_key(api: str, key: str) -> None:
+    """Revoke this run's key, and any left by an interrupted run; this run's own key last,
+    since it makes the calls. A failure here is reported, never fatal."""
     import urllib.request
 
     headers = {"Authorization": f"Bearer {key}"}
-    with urllib.request.urlopen(urllib.request.Request(f"{api}/v1/api-keys", headers=headers)) as r:
-        keys = json.load(r)
-    for item in keys:
-        if item["label"] == ADMIN_LABEL and not item["revoked_at"]:
-            request = urllib.request.Request(
+    try:
+        request = urllib.request.Request(f"{api}/v1/api-keys", headers=headers)
+        with urllib.request.urlopen(request) as response:
+            keys = json.load(response)
+        mine = [k for k in keys if k["label"] == ADMIN_LABEL and not k["revoked_at"]]
+        own = key.removeprefix("bap_admin_")  # stored prefixes are the random part
+        for item in sorted(mine, key=lambda k: own.startswith(k["prefix"])):
+            delete = urllib.request.Request(
                 f"{api}/v1/api-keys/{item['id']}", method="DELETE", headers=headers
             )
-            urllib.request.urlopen(request).close()
+            urllib.request.urlopen(delete).close()
+    except Exception as exc:  # cleanup must never lose a finished recording
+        print(
+            f"Warning: could not revoke the recorder's admin key ({exc}); revoke "
+            f"'{ADMIN_LABEL}' keys in the dashboard's Settings."
+        )
 
 
 # --- main --------------------------------------------------------------------------------------
@@ -352,6 +374,8 @@ def main() -> int:
     video = cfg["video"]
     size = {"width": video["width"], "height": video["height"]}
     scenes = [s for s in cfg["scenes"] if not args.only or s["id"] in args.only]
+    if not args.dry_run and not args.only:
+        reset_activity()  # the video's dashboard shows only what this recording creates
     admin_key = create_admin_key() if any(s["kind"] == "dashboard" for s in scenes) else ""
 
     if not args.dry_run:
@@ -379,6 +403,9 @@ def main() -> int:
                         print(f"  {scene['id']}: ok ({end - start:.1f} s)", flush=True)
                         break
                     except SceneFailed as exc:
+                        OUT.mkdir(exist_ok=True)
+                        with contextlib.suppress(PlaywrightError):  # how the page looked
+                            page.screenshot(path=str(OUT / f"failed-{scene['id']}.png"))
                         context.close()
                         if page.video:
                             Path(page.video.path()).unlink(missing_ok=True)

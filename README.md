@@ -8,6 +8,14 @@ authentication, tenant data isolation and document ingestion, run locally with D
 
 [![CI](https://github.com/hasinabraradib/business-agent-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hasinabraradib/business-agent-platform/actions/workflows/ci.yml)
 
+## Demo
+
+[![Watch the 90-second demo](demo/out/thumbnail.png)](VIDEO_URL_HERE)
+
+![Booking a table in the chat widget](demo/out/booking.gif)
+
+How the video is recorded, and how to re-record it: [demo/README.md](demo/README.md#demo-video-saffron--sage-bistro).
+
 ## Run locally
 
 Requires Docker and [uv](https://docs.astral.sh/uv/).

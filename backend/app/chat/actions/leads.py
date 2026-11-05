@@ -10,8 +10,18 @@ EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class LeadArgs(ToolArgs):
-    name: str = Field(min_length=1, max_length=80)
-    contact: str = Field(min_length=5, max_length=120, description="Phone number or email")
+    # gpt-6-luna called capture_lead before asking for the details (an invalid_arguments chip
+    # in the demo video's dashboard); the field descriptions say to ask first.
+    name: str = Field(
+        min_length=1,
+        max_length=80,
+        description="The customer's name as they gave it. Not given yet: ask; don't call",
+    )
+    contact: str = Field(
+        min_length=5,
+        max_length=120,
+        description="Phone number or email the customer gave. Not given yet: ask; don't call",
+    )
     interest: str = Field(
         min_length=3, max_length=500, description="What they want, e.g. '50 sarees for a wedding'"
     )

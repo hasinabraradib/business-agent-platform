@@ -441,3 +441,11 @@ async def test_a_lead_confirms_even_when_the_request_is_reworded(
     async with owner_engine.connect() as conn:
         interests = (await conn.execute(text("SELECT interest FROM leads"))).scalars().all()
     assert interests == ["a wedding order of 50 sarees"]
+
+
+def test_lead_fields_say_to_ask_before_calling() -> None:
+    from app.chat.actions.leads import LeadArgs
+
+    fields = LeadArgs.model_json_schema()["properties"]
+    assert "Not given yet: ask; don't call" in fields["name"]["description"]
+    assert "Not given yet: ask; don't call" in fields["contact"]["description"]

@@ -58,15 +58,13 @@ OVERLAY_JS = """
       fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
     Object.assign(cursor.style, {position: 'fixed', left: '960px', top: '700px', zIndex: 2147483647,
       pointerEvents: 'none', transition: 'transform 120ms ease', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.35))'});
-    const zoom = window.__demoZoom || 1;  // the page is zoomed: keep overlays their usual size
-    cursor.style.zoom = String(1 / zoom);
     const caption = document.createElement('div');
     caption.id = 'demo-caption';
     Object.assign(caption.style, {position: 'fixed', left: '50%', bottom: '56px', transform: 'translateX(-50%)',
       zIndex: 2147483646, pointerEvents: 'none', background: 'rgba(17,17,17,.78)', color: '#fff',
       font: '600 40px/1.25 -apple-system, "Segoe UI", system-ui, sans-serif', padding: '18px 36px',
       borderRadius: '20px', maxWidth: '1500px', textAlign: 'center', opacity: '0',
-      transition: 'opacity 400ms ease', letterSpacing: '0.2px', zoom: String(1 / zoom)});
+      transition: 'opacity 400ms ease', letterSpacing: '0.2px'});
     const main = document.createElement('div');
     const sub = document.createElement('div');
     sub.id = 'demo-caption-sub';
@@ -81,8 +79,7 @@ OVERLAY_JS = """
       c.firstChild.textContent = text || ''; c.lastChild.textContent = sub || '';
       c.lastChild.style.display = sub ? 'block' : 'none'; c.style.opacity = text ? '1' : '0'; },
     move(x, y) { install(); const c = document.getElementById('demo-cursor');
-      const z = window.__demoZoom || 1;  // the cursor is unzoomed: page px -> its own px
-      c.style.left = (x * z) + 'px'; c.style.top = (y * z) + 'px'; },
+      c.style.left = x + 'px'; c.style.top = y + 'px'; },
     press(down) { const c = document.getElementById('demo-cursor');
       if (c) c.style.transform = down ? 'scale(0.82)' : 'scale(1)'; },
   };
@@ -273,6 +270,24 @@ def load_site(page: Page, cfg: dict, scene: dict) -> None:
     page.goto(scene.get("site_url", cfg["site_url"]), wait_until="networkidle")
     widget(page).locator("button[aria-controls='bap-panel']").wait_for(timeout=20_000)
     page.evaluate("() => window.__demo.install()")
+    if zoom := cfg["video"].get("widget_zoom"):
+        enlarge_widget(page, zoom, cfg["video"].get("widget_panel_height", 450))
+
+
+def enlarge_widget(page: Page, zoom: float, panel_height: int) -> None:
+    """Zoom only the chat widget, so its text is readable on a phone (15 px x 1.875 = 28 px),
+    and shorten the panel so the zoomed panel still fits the frame. The site, the dashboard and
+    the captions keep their normal size. Recording only: the product is unchanged."""
+    page.evaluate(
+        """([zoom, height]) => {
+          const host = document.querySelector('#bap-chat-widget');
+          host.style.zoom = String(zoom);
+          const style = document.createElement('style');
+          style.textContent = `.panel{height:${height}px;max-height:none}`;
+          host.shadowRoot.appendChild(style);
+        }""",
+        [zoom, panel_height],
+    )
 
 
 def scene_site(page: Page, director: Director, scene: dict, cfg: dict) -> float:
@@ -450,9 +465,7 @@ def main() -> int:
             for scene in scenes:
                 attempts = 1 if args.dry_run else video["retries"]
                 for attempt in range(1, attempts + 1):
-                    context = make_context(
-                        browser, size, None if args.dry_run else raw, video.get("zoom", 1)
-                    )
+                    context = make_context(browser, size, None if args.dry_run else raw)
                     page = context.new_page()
                     director = Director(page, video)
                     try:
@@ -512,15 +525,11 @@ def main() -> int:
     return 0
 
 
-def make_context(browser, size: dict, video_dir: Path | None, zoom: float = 1) -> BrowserContext:
-    """zoom > 1 renders a smaller viewport at a higher pixel density into the same video size,
-    so the chat text is readable on a phone (overlays keep their size)."""
-    viewport = {"width": round(size["width"] / zoom), "height": round(size["height"] / zoom)}
-    options = {"viewport": viewport, "device_scale_factor": zoom}
+def make_context(browser, size: dict, video_dir: Path | None) -> BrowserContext:
+    options = {"viewport": size, "device_scale_factor": 1}
     if video_dir:
         options.update(record_video_dir=str(video_dir), record_video_size=size)
     context = browser.new_context(**options)
-    context.add_init_script(f"window.__demoZoom = {zoom};")
     context.add_init_script(OVERLAY_JS)
     return context
 

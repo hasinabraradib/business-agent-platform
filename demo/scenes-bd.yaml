@@ -15,8 +15,9 @@
 video:
   width: 1920
   height: 1080
-  zoom: 1.875          # 15 px chat text -> 28 px in 1080p; keeps a 1024 px wide page (dashboard sidebar)
-  type_delay_ms: 32
+  widget_zoom: 1.875   # chat text 15 px -> 28 px in the 1080p video (readable on a phone)
+  widget_panel_height: 450   # css px before zoom, so the enlarged panel fits the frame
+  type_delay_ms: 24
   default_hold_s: 2
   retries: 3
 
@@ -34,7 +35,7 @@ scenes:
   - id: nodi-site
     kind: site
     caption: "A customer visits Nodi Kitchen's website at 11pm..."
-    hold_s: 0.6
+    hold_s: 0.3
 
   - id: english
     kind: chat
@@ -44,7 +45,7 @@ scenes:
         language: english
         expect: ["halal", "60", "1,?500"]
         sources: true
-        hold_s: 2.2
+        hold_s: 1.8
 
   - id: bangla
     kind: chat
@@ -54,7 +55,7 @@ scenes:
       - say: "শুক্রবার কখন খোলেন?"
         language: bengali
         expect: ["2:30|২:৩০|আড়াই|2\\.30|২\\.৩০"]
-        hold_s: 2.2
+        hold_s: 1.8
 
   - id: banglish
     kind: chat
@@ -64,7 +65,7 @@ scenes:
       - say: "kacchi biryani er dam koto? jhal kemon?"
         language: banglish
         expect: ["480|৪৮০", "medium|majhari|moddhom|mid"]
-        hold_s: 2.2
+        hold_s: 1.8
 
   - id: booking
     kind: chat
@@ -75,17 +76,17 @@ scenes:
       - say: "kal raat 8 tay 4 jon er jonno table book korte chai"
         language: banglish
         expect: ["na+m|name", "phone|number|nombor"]
-        hold_s: 0.8
+        hold_s: 0.5
       # The app replies in the language of the latest message, and "Rahim, 01711-123456" alone
       # reads as English, so the customer's lines say it in Banglish.
       - say: "amar naam Rahim, number 01711-123456"
         language: banglish
         expect: ["Rahim", "8|৮"]
-        hold_s: 0.8
+        hold_s: 0.5
       - say: "ji, thik ache, confirm koren"
         language: banglish
         expect: ["book|confirm|R-"]
-        hold_s: 2.2
+        hold_s: 1.8
 
   - id: party
     kind: chat
@@ -96,22 +97,22 @@ scenes:
         language: bengali
         expect: ["২০|20", "টিম|নাম|ফোন"]
         not_expect: ["হ্যাঁ,? (সম্ভব|পারব)", "বুক(ড| করা হয়েছে)"]
-        hold_s: 1.2
+        hold_s: 0.8
       - say: "আমি নাদিয়া, ০১৮১২-৩৪৫৬৭৮"
         language: bengali
         expect: ["নাদিয়া|Nadia"]
-        hold_s: 0.8
+        hold_s: 0.5
       - say: "হ্যাঁ, ঠিক আছে"
         language: bengali
         expect: ["টিম|যোগাযোগ"]
-        hold_s: 2.2
+        hold_s: 1.8
 
   - id: jamdani-site
     kind: site
     tenant: demo-shop
     site_url: http://localhost:8080/jamdani-lane/
     caption: "It works for online shops too."
-    hold_s: 0.6
+    hold_s: 0.3
 
   - id: order
     kind: chat
@@ -123,11 +124,11 @@ scenes:
       - say: "amar order JL-10232 kothay ache?"
         language: banglish
         expect: ["4|char|shesh|last|digit"]
-        hold_s: 0.8
+        hold_s: 0.5
       - say: "phone er shesh 4 digit 6543"
         language: banglish
         expect: ["ship|pathano|courier"]
-        hold_s: 2.2
+        hold_s: 1.8
 
   - id: product
     kind: chat
@@ -138,13 +139,13 @@ scenes:
       - say: "Do you have a half-silk jamdani in teal? Price?"
         language: english
         expect: ["12,?500", "teal", "stock"]
-        hold_s: 2.2
+        hold_s: 1.8
 
   - id: dashboard
     kind: dashboard
     tenant: demo-restaurant
     caption: "You see every conversation, booking and lead in one place."
-    inbox_hold_s: 2.5
+    inbox_hold_s: 2
     open_conversation: false
     bookings_text: "Rahim"
     hold_s: 2.5

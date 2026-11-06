@@ -30,3 +30,32 @@ $RECORD                                              # record (each scene retrie
   site's widget key (`site/config.local.js`) are git-ignored.
 - **Browser:** Playwright 1.63 uses the Chromium build the dashboard's tests already
   downloaded. Otherwise, run `uvx --from playwright==1.63.0 playwright install chromium` once.
+
+## Demo video (Bangladesh: Nodi Kitchen and Jamdani Lane)
+
+A second video, scripted in `scenes-bd.yaml`, uses the two demo tenants seeded by
+`./scripts/demo-setup.sh` (`demo-restaurant` and `demo-shop`, pages on http://localhost:8080).
+It shows replies in English, Bangla and Banglish, a Banglish booking, a party request passed to
+staff, an order lookup (order JL-10232) and a catalogue question, then the dashboard.
+
+```bash
+docker compose up -d --build && ./scripts/demo-setup.sh   # stack, widget, demo tenants and pages
+REC="uv run --project backend --with playwright==1.63.0 python demo/record_demo.py --scenes demo/scenes-bd.yaml --out demo/out/bd"
+$REC --dry-run                                  # every reply checked, with its detected language
+$REC                                            # record (each scene retried up to 3 times)
+./demo/build_video.sh --out demo/out/bd --name bd   # demo_bd_1080p.mp4, demo_bd_720p.mp4, thumbnail_bd.png, booking_bd.gif
+```
+
+What `scenes-bd.yaml` adds to the scene format:
+- **`tenant` and `site_url` per scene.** An admin key is created and revoked for each tenant whose
+  dashboard is shown.
+- **`language` per message** (`english`, `bengali` or `banglish`). The reply must be in that
+  language, judged by the app's own `reply_language` rule, which is why this script runs with the
+  backend's environment (`--project backend`).
+- **`translation`:** a smaller second caption line for viewers who don't read Bangla.
+- **`video.widget_zoom`:** enlarges only the chat widget, so its text is about 28 px in the
+  1080p video.
+
+A full recording first deletes the old conversations, bookings and leads of every tenant in its
+script, so the dashboard shows only what it recorded. Documents, orders, settings and keys are
+kept.

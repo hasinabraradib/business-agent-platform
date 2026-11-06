@@ -16,6 +16,8 @@ authentication, tenant data isolation and document ingestion, run locally with D
 
 How the video is recorded, and how to re-record it: [demo/README.md](demo/README.md#demo-video-saffron--sage-bistro).
 
+A second video shows Nodi Kitchen and Jamdani Lane replying in English, Bangla and Banglish: [![Bangladesh demo](demo/out/bd/thumbnail_bd.png)](VIDEO_URL_BD_HERE)
+
 ## Run locally
 
 Requires Docker and [uv](https://docs.astral.sh/uv/).

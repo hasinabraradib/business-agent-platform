@@ -1,0 +1,157 @@
+# Bangladesh demo video: Nodi Kitchen (demo-restaurant) and Jamdani Lane (demo-shop), replying
+# in English, Bangla (Bengali script) and Banglish. Read by demo/record_demo.py:
+#
+#   uv run --project backend --with playwright==1.63.0 python demo/record_demo.py \
+#       --scenes demo/scenes-bd.yaml --out demo/out/bd [--dry-run]
+#   ./demo/build_video.sh --out demo/out/bd --name bd
+#
+# Same format as scenes.yaml, plus:
+#   tenant / site_url   per scene (default: the top-level values)
+#   language            english | bengali | banglish: the reply must be in it (the app's own
+#                       reply_language rule); a wrong language fails the check like a keyword
+#   translation         a smaller second caption line, for viewers who don't read Bangla
+# Facts come from demo/restaurant and demo/shop; patterns accept Bengali and Latin digits.
+
+video:
+  width: 1920
+  height: 1080
+  zoom: 1.875          # 15 px chat text -> 28 px in 1080p; keeps a 1024 px wide page (dashboard sidebar)
+  type_delay_ms: 32
+  default_hold_s: 2
+  retries: 3
+
+tenant: demo-restaurant
+site_url: http://localhost:8080/nodi-kitchen/
+dashboard_url: http://localhost:3001
+
+scenes:
+  - id: title
+    kind: card
+    headline: "Your business's 24/7 assistant"
+    subline: "Replies in Bangla, English and Banglish, day and night"
+    hold_s: 3
+
+  - id: nodi-site
+    kind: site
+    caption: "A customer visits Nodi Kitchen's website at 11pm..."
+    hold_s: 0.6
+
+  - id: english
+    kind: chat
+    caption: "Answers from the restaurant's own menu and FAQ."
+    messages:
+      - say: "Is the food halal, and do you deliver?"
+        language: english
+        expect: ["halal", "60", "1,?500"]
+        sources: true
+        hold_s: 2.2
+
+  - id: bangla
+    kind: chat
+    caption: "Replies in Bangla..."
+    translation: "Customer (in Bangla): When do you open on Friday?"
+    messages:
+      - say: "শুক্রবার কখন খোলেন?"
+        language: bengali
+        expect: ["2:30|২:৩০|আড়াই|2\\.30|২\\.৩০"]
+        hold_s: 2.2
+
+  - id: banglish
+    kind: chat
+    caption: "...and in Banglish, the way people actually text."
+    translation: "Customer (Banglish): How much is the kacchi biryani? How spicy is it?"
+    messages:
+      - say: "kacchi biryani er dam koto? jhal kemon?"
+        language: banglish
+        expect: ["480|৪৮০", "medium|majhari|moddhom|mid"]
+        hold_s: 2.2
+
+  - id: booking
+    kind: chat
+    caption: "Takes table bookings, even in Banglish."
+    translation: "Customer: I want to book a table for 4 tomorrow at 8pm."
+    thumbnail: true
+    messages:
+      - say: "kal raat 8 tay 4 jon er jonno table book korte chai"
+        language: banglish
+        expect: ["na+m|name", "phone|number|nombor"]
+        hold_s: 0.8
+      # The app replies in the language of the latest message, and "Rahim, 01711-123456" alone
+      # reads as English, so the customer's lines say it in Banglish.
+      - say: "amar naam Rahim, number 01711-123456"
+        language: banglish
+        expect: ["Rahim", "8|৮"]
+        hold_s: 0.8
+      - say: "ji, thik ache, confirm koren"
+        language: banglish
+        expect: ["book|confirm|R-"]
+        hold_s: 2.2
+
+  - id: party
+    kind: chat
+    caption: "Never guesses on big requests. Passes them to your staff."
+    translation: "Customer (in Bangla): I want to host a 30-person birthday party. Is that possible?"
+    messages:
+      - say: "৩০ জনের একটা জন্মদিনের পার্টি করতে চাই, সম্ভব?"
+        language: bengali
+        expect: ["২০|20", "টিম|নাম|ফোন"]
+        not_expect: ["হ্যাঁ,? (সম্ভব|পারব)", "বুক(ড| করা হয়েছে)"]
+        hold_s: 1.2
+      - say: "আমি নাদিয়া, ০১৮১২-৩৪৫৬৭৮"
+        language: bengali
+        expect: ["নাদিয়া|Nadia"]
+        hold_s: 0.8
+      - say: "হ্যাঁ, ঠিক আছে"
+        language: bengali
+        expect: ["টিম|যোগাযোগ"]
+        hold_s: 2.2
+
+  - id: jamdani-site
+    kind: site
+    tenant: demo-shop
+    site_url: http://localhost:8080/jamdani-lane/
+    caption: "It works for online shops too."
+    hold_s: 0.6
+
+  - id: order
+    kind: chat
+    tenant: demo-shop
+    site_url: http://localhost:8080/jamdani-lane/
+    caption: "Customers can check their order status any time."
+    translation: "Customer: Where is my order?"
+    messages:
+      - say: "amar order JL-10232 kothay ache?"
+        language: banglish
+        expect: ["4|char|shesh|last|digit"]
+        hold_s: 0.8
+      - say: "phone er shesh 4 digit 6543"
+        language: banglish
+        expect: ["ship|pathano|courier"]
+        hold_s: 2.2
+
+  - id: product
+    kind: chat
+    tenant: demo-shop
+    site_url: http://localhost:8080/jamdani-lane/
+    caption: "Answers product questions from the catalogue."
+    messages:
+      - say: "Do you have a half-silk jamdani in teal? Price?"
+        language: english
+        expect: ["12,?500", "teal", "stock"]
+        hold_s: 2.2
+
+  - id: dashboard
+    kind: dashboard
+    tenant: demo-restaurant
+    caption: "You see every conversation, booking and lead in one place."
+    inbox_hold_s: 2.5
+    open_conversation: false
+    bookings_text: "Rahim"
+    hold_s: 2.5
+
+  - id: end
+    kind: card
+    headline: "Want an assistant like this for your business?"
+    subline: "Reply to my email."
+    signature: "Hasin Abrar Adib"
+    hold_s: 4

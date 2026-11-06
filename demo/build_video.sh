@@ -5,9 +5,26 @@
 #   demo/out/thumbnail.png   a frame from the booking scene
 #   demo/out/booking.gif     the end of the booking scene, max 10 s, 720 px wide, under ~5 MB
 # If demo/voiceover.mp3 exists it becomes the audio track (padded or cut to the video's length).
+#
+#   ./demo/build_video.sh [--out DIR] [--name NAME]
+# --out: the folder record_demo.py recorded into (default demo/out). --name bd gives
+# demo_bd_1080p.mp4, demo_bd_720p.mp4, thumbnail_bd.png and booking_bd.gif.
 set -euo pipefail
 cd "$(dirname "$0")"
 OUT=out
+NAME=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --out) OUT="$2"; shift 2 ;;
+    --name) NAME="$2"; shift 2 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+OUT="${OUT#demo/}"  # accept repo-relative paths too
+OUT="$(cd "$OUT" 2>/dev/null && pwd || echo "$OUT")"
+V="demo${NAME:+_$NAME}"
+THUMB="thumbnail${NAME:+_$NAME}.png"
+GIF="booking${NAME:+_$NAME}.gif"
 SEGMENTS="$OUT/segments.json"
 [ -f "$SEGMENTS" ] || { echo "No $SEGMENTS: run demo/record_demo.py first." >&2; exit 1; }
 command -v ffmpeg >/dev/null || { echo "ffmpeg is not installed (brew install ffmpeg)." >&2; exit 1; }
@@ -35,9 +52,9 @@ if [ -f voiceover.mp3 ]; then
   AUDIO=(-i voiceover.mp3 -map 0:v -map 1:a -af apad -shortest -c:a aac -b:a 160k)
 fi
 ffmpeg -loglevel error -y -i "$TMP/joined.mp4" ${AUDIO[@]+"${AUDIO[@]}"} -c:v libx264 -crf 20 -preset veryfast \
-  -pix_fmt yuv420p -movflags +faststart "$OUT/demo_1080p.mp4"
-ffmpeg -loglevel error -y -i "$OUT/demo_1080p.mp4" -vf scale=-2:720 -c:v libx264 -crf 22 \
-  -preset veryfast -pix_fmt yuv420p -c:a copy -movflags +faststart "$OUT/demo_720p.mp4"
+  -pix_fmt yuv420p -movflags +faststart "$OUT/${V}_1080p.mp4"
+ffmpeg -loglevel error -y -i "$OUT/${V}_1080p.mp4" -vf scale=-2:720 -c:v libx264 -crf 22 \
+  -preset veryfast -pix_fmt yuv420p -c:a copy -movflags +faststart "$OUT/${V}_720p.mp4"
 
 # 3. Thumbnail and GIF from the booking scene (where it sits in the joined video).
 read -r BOOK_START BOOK_END THUMB_AT < <(python3 - "$SEGMENTS" <<'PY'
@@ -54,19 +71,19 @@ else:
     print("0 10 5")
 PY
 )
-ffmpeg -loglevel error -y -ss "$THUMB_AT" -i "$OUT/demo_1080p.mp4" -frames:v 1 "$OUT/thumbnail.png"
+ffmpeg -loglevel error -y -ss "$THUMB_AT" -i "$OUT/${V}_1080p.mp4" -frames:v 1 "$OUT/$THUMB"
 
 GIF_START=$(python3 -c "print(max($BOOK_START, $BOOK_END - 10))")
 for FPS in 12 10 8; do
-  ffmpeg -loglevel error -y -ss "$GIF_START" -t 10 -i "$OUT/demo_1080p.mp4" \
+  ffmpeg -loglevel error -y -ss "$GIF_START" -t 10 -i "$OUT/${V}_1080p.mp4" \
     -vf "fps=$FPS,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
-    "$OUT/booking.gif"
-  SIZE=$(stat -f %z "$OUT/booking.gif" 2>/dev/null || stat -c %s "$OUT/booking.gif")
+    "$OUT/$GIF"
+  SIZE=$(stat -f %z "$OUT/$GIF" 2>/dev/null || stat -c %s "$OUT/$GIF")
   [ "$SIZE" -le 5000000 ] && break
-  echo "booking.gif is $((SIZE / 1024)) KB at ${FPS} fps; trying fewer frames"
+  echo "$GIF is $((SIZE / 1024)) KB at ${FPS} fps; trying fewer frames"
 done
 
 rm -rf "$TMP"
-DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/demo_1080p.mp4")
+DURATION=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/${V}_1080p.mp4")
 printf "Built (video length %.1f s):\n" "$DURATION"
-ls -lh "$OUT"/demo_1080p.mp4 "$OUT"/demo_720p.mp4 "$OUT"/thumbnail.png "$OUT"/booking.gif | awk '{print "  " $5 "  " $9}'
+ls -lh "$OUT/${V}_1080p.mp4" "$OUT/${V}_720p.mp4" "$OUT/$THUMB" "$OUT/$GIF" | awk '{print "  " $5 "  " $9}'

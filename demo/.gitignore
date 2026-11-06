@@ -2,6 +2,10 @@
 out/*
 !out/thumbnail.png
 !out/booking.gif
+!out/bd/
+out/bd/*
+!out/bd/thumbnail_bd.png
+!out/bd/booking_bd.gif
 *.webm
 *.mp4
 voiceover.mp3

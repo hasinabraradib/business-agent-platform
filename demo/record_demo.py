@@ -1,8 +1,13 @@
-"""Record the product demo video from demo/scenes.yaml (Playwright, Chromium, 1920x1080).
+"""Record a product demo video from a scene script (Playwright, Chromium, 1920x1080).
 
-    uv run --with playwright==1.63.0 --with pyyaml python demo/record_demo.py --dry-run
-    uv run --with playwright==1.63.0 --with pyyaml python demo/record_demo.py
+    uv run --no-project --with playwright==1.63.0 --with pyyaml python demo/record_demo.py --dry-run
+    uv run --no-project --with playwright==1.63.0 --with pyyaml python demo/record_demo.py
     ./demo/build_video.sh
+
+    # Scripts that check reply languages import the app's own rules, so run them with the
+    # backend's environment:
+    uv run --project backend --with playwright==1.63.0 python demo/record_demo.py \
+        --scenes demo/scenes-bd.yaml --out demo/out/bd --dry-run
 
 Needs the stack (API, worker, dashboard), the demo site (demo/site/serve.py) and the demo
 tenant (demo/seed.py). Each scene is recorded in its own browser context, so a scene can be
@@ -32,9 +37,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-OUT = HERE / "out"
-RAW = OUT / "raw"
-TENANT = "saffron-sage"
+TENANT = "saffron-sage"  # default tenant when a script names none
 ADMIN_LABEL = "Demo video recorder"
 
 
@@ -55,21 +58,31 @@ OVERLAY_JS = """
       fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
     Object.assign(cursor.style, {position: 'fixed', left: '960px', top: '700px', zIndex: 2147483647,
       pointerEvents: 'none', transition: 'transform 120ms ease', filter: 'drop-shadow(0 2px 3px rgba(0,0,0,.35))'});
+    const zoom = window.__demoZoom || 1;  // the page is zoomed: keep overlays their usual size
+    cursor.style.zoom = String(1 / zoom);
     const caption = document.createElement('div');
     caption.id = 'demo-caption';
     Object.assign(caption.style, {position: 'fixed', left: '50%', bottom: '56px', transform: 'translateX(-50%)',
       zIndex: 2147483646, pointerEvents: 'none', background: 'rgba(17,17,17,.78)', color: '#fff',
       font: '600 40px/1.25 -apple-system, "Segoe UI", system-ui, sans-serif', padding: '18px 36px',
       borderRadius: '20px', maxWidth: '1500px', textAlign: 'center', opacity: '0',
-      transition: 'opacity 400ms ease', letterSpacing: '0.2px'});
+      transition: 'opacity 400ms ease', letterSpacing: '0.2px', zoom: String(1 / zoom)});
+    const main = document.createElement('div');
+    const sub = document.createElement('div');
+    sub.id = 'demo-caption-sub';
+    Object.assign(sub.style, {font: '500 28px/1.3 -apple-system, "Segoe UI", system-ui, sans-serif',
+      color: '#d7dae0', marginTop: '6px'});
+    caption.append(main, sub);
     document.documentElement.append(cursor, caption);
   };
   window.__demo = {
     install,
-    caption(text) { install(); const c = document.getElementById('demo-caption');
-      c.textContent = text || ''; c.style.opacity = text ? '1' : '0'; },
+    caption(text, sub) { install(); const c = document.getElementById('demo-caption');
+      c.firstChild.textContent = text || ''; c.lastChild.textContent = sub || '';
+      c.lastChild.style.display = sub ? 'block' : 'none'; c.style.opacity = text ? '1' : '0'; },
     move(x, y) { install(); const c = document.getElementById('demo-cursor');
-      c.style.left = x + 'px'; c.style.top = y + 'px'; },
+      const z = window.__demoZoom || 1;  // the cursor is unzoomed: page px -> its own px
+      c.style.left = (x * z) + 'px'; c.style.top = (y * z) + 'px'; },
     press(down) { const c = document.getElementById('demo-cursor');
       if (c) c.style.transform = down ? 'scale(0.82)' : 'scale(1)'; },
   };
@@ -92,8 +105,10 @@ class Director:
         """Seconds since this page's recording started."""
         return time.monotonic() - self.t0
 
-    def caption(self, text: str | None) -> None:
-        self.page.evaluate("t => window.__demo.caption(t)", text or "")
+    def caption(self, text: str | None, translation: str | None = None) -> None:
+        self.page.evaluate(
+            "([t, s]) => window.__demo.caption(t, s)", [text or "", translation or ""]
+        )
 
     def move_to(self, locator, duration_ms: int = 700) -> None:
         box = locator.bounding_box()
@@ -195,7 +210,33 @@ def check_reply(step: dict, reply: dict) -> list[str]:
             problems.append(f"contains /{pattern}/")
     if step.get("sources") and not reply["sources"]:
         problems.append("no source chips")
+    want = step.get("language")
+    if want and reply.get("language") != want:
+        problems.append(f"replied in {reply.get('language')}, expected {want}")
     return problems
+
+
+_LANGUAGE = None
+
+
+def detect_language(text: str) -> str | None:
+    """The app's own rule (app.chat.prompts.reply_language): bengali (Bengali script),
+    banglish (Bengali in Latin letters) or english. None when the backend isn't importable."""
+    global _LANGUAGE
+    if _LANGUAGE is None:
+        sys.path.insert(0, str(REPO / "backend"))
+        try:
+            from app.chat.prompts import reply_language
+        except ImportError:
+            _LANGUAGE = False
+        else:
+            _LANGUAGE = reply_language
+    if not _LANGUAGE:
+        return None
+    # The rule was written for customer messages. The system prompt has English replies write
+    # prices as "480 taka", and two of those made a correct English reply count as Banglish,
+    # so the currency word is not counted when checking a reply.
+    return _LANGUAGE(re.sub(r"\btakar?\b", " ", text, flags=re.I))
 
 
 # --- scenes ------------------------------------------------------------------------------------
@@ -228,14 +269,14 @@ def scene_card(page: Page, director: Director, scene: dict, cfg: dict) -> float:
     return start
 
 
-def load_site(page: Page, cfg: dict) -> None:
-    page.goto(cfg["site_url"], wait_until="networkidle")
+def load_site(page: Page, cfg: dict, scene: dict) -> None:
+    page.goto(scene.get("site_url", cfg["site_url"]), wait_until="networkidle")
     widget(page).locator("button[aria-controls='bap-panel']").wait_for(timeout=20_000)
     page.evaluate("() => window.__demo.install()")
 
 
 def scene_site(page: Page, director: Director, scene: dict, cfg: dict) -> float:
-    load_site(page, cfg)
+    load_site(page, cfg, scene)
     page.wait_for_timeout(300)
     start = director.mark()
     director.caption(scene.get("caption"))
@@ -251,16 +292,22 @@ def scene_site(page: Page, director: Director, scene: dict, cfg: dict) -> float:
 
 
 def scene_chat(page: Page, director: Director, scene: dict, cfg: dict, checks: list) -> float:
-    load_site(page, cfg)
+    load_site(page, cfg, scene)
     open_widget(page)
     start = director.mark()
-    director.caption(scene.get("caption"))
+    director.caption(scene.get("caption"), scene.get("translation"))
     director.hold(0.6)
     for step in scene["messages"]:
+        if "translation" in step:  # a per-message translation replaces the scene's
+            director.caption(scene.get("caption"), step["translation"])
         reply = ask(page, director, step["say"])
+        reply["language"] = detect_language(reply["text"])
+        if step.get("language") and reply["language"] is None:
+            sys.exit("Language checks need the backend: run with uv run --project backend.")
         problems = check_reply(step, reply)
         checks.append({"scene": scene["id"], "say": step["say"], "reply": reply["text"],
-                       "sources": reply["sources"], "problems": problems})  # fmt: skip
+                       "sources": reply["sources"], "language": reply["language"],
+                       "problems": problems})  # fmt: skip
         if problems:
             raise SceneFailed(f"{scene['id']}: {'; '.join(problems)}\n  reply: {reply['text']}")
         director.hold(step.get("hold_s", cfg["video"]["default_hold_s"]))
@@ -287,13 +334,16 @@ def scene_dashboard(
     if term := scene.get("search"):  # find this conversation the way an owner would
         director.type(page.get_by_label("Search conversations"), term)
         page.wait_for_timeout(900)  # the inbox search is debounced
-    director.click(conversations.first)
-    page.wait_for_load_state("networkidle")
-    page.evaluate("() => window.__demo.install()")
-    director.caption(scene.get("caption"))
-    director.hold(1.8)
+    if scene.get("inbox_hold_s"):  # let viewers see the list of conversations
+        director.hold(scene["inbox_hold_s"])
+    if scene.get("open_conversation", True):
+        director.click(conversations.first)
+        page.wait_for_load_state("networkidle")
+        page.evaluate("() => window.__demo.install()")
+        director.caption(scene.get("caption"))
+        director.hold(scene.get("conversation_hold_s", 1.8))
     trace = page.get_by_role("link", name="View trace").last
-    if trace.count():
+    if scene.get("trace", True) and scene.get("open_conversation", True) and trace.count():
         director.click(trace)
         page.wait_for_load_state("networkidle")
         page.evaluate("() => window.__demo.install()")
@@ -304,7 +354,7 @@ def scene_dashboard(
     page.wait_for_load_state("networkidle")
     page.evaluate("() => window.__demo.install()")
     director.caption(scene.get("caption"))
-    page.get_by_text("Maria Lopez").first.wait_for(timeout=10_000)
+    page.get_by_text(scene.get("bookings_text", "Maria Lopez")).first.wait_for(timeout=10_000)
     director.hold(scene.get("hold_s", 2.5))
     return start
 
@@ -312,23 +362,23 @@ def scene_dashboard(
 # --- keys --------------------------------------------------------------------------------------
 
 
-def reset_activity() -> None:
+def reset_activity(tenant: str) -> None:
     subprocess.run(
         ["docker", "compose", "run", "--rm", "--no-deps", "-T", "migrate", "python",
-         "/demo/seed.py", "--reset-activity"],
+         "/demo/seed.py", "--reset-activity", "--tenant", tenant],
         cwd=REPO, check=True,
     )  # fmt: skip
 
 
-def create_admin_key() -> str:
+def create_admin_key(tenant: str) -> str:
     out = subprocess.run(
         ["docker", "compose", "run", "--rm", "--no-deps", "-T", "migrate", "python", "-m",
-         "app.cli", "create-key", "--tenant", TENANT, "--kind", "admin", "--label", ADMIN_LABEL],
+         "app.cli", "create-key", "--tenant", tenant, "--kind", "admin", "--label", ADMIN_LABEL],
         cwd=REPO, capture_output=True, text=True,
     )  # fmt: skip
     match = re.search(r"bap_admin_[A-Za-z0-9_-]+", out.stdout)
     if not match:
-        sys.exit(f"Could not create an admin key for {TENANT}; run demo/seed.py first.")
+        sys.exit(f"Could not create an admin key for {tenant}; is it seeded?")
     return match.group(0)
 
 
@@ -365,6 +415,7 @@ def main() -> int:
     )
     parser.add_argument("--dry-run", action="store_true", help="play and check, don't record")
     parser.add_argument("--scenes", default=str(HERE / "scenes.yaml"))
+    parser.add_argument("--out", default=str(HERE / "out"), help="output folder for this video")
     parser.add_argument("--only", action="append", help="scene id; repeatable")
     parser.add_argument("--api", default="http://localhost:8000")
     parser.add_argument("--headed", action="store_true", help="show the browser")
@@ -374,13 +425,23 @@ def main() -> int:
     video = cfg["video"]
     size = {"width": video["width"], "height": video["height"]}
     scenes = [s for s in cfg["scenes"] if not args.only or s["id"] in args.only]
+    out, raw = Path(args.out), Path(args.out) / "raw"
+    default_tenant = cfg.get("tenant", TENANT)
+    tenants = list(dict.fromkeys(s.get("tenant", default_tenant) for s in cfg["scenes"]
+                                 if s["kind"] in ("site", "chat", "dashboard")))  # fmt: skip
     if not args.dry_run and not args.only:
-        reset_activity()  # the video's dashboard shows only what this recording creates
-    admin_key = create_admin_key() if any(s["kind"] == "dashboard" for s in scenes) else ""
+        for tenant in tenants:  # the video's dashboard shows only what this recording creates
+            reset_activity(tenant)
+    admin_keys = {
+        tenant: create_admin_key(tenant)
+        for tenant in dict.fromkeys(
+            s.get("tenant", default_tenant) for s in scenes if s["kind"] == "dashboard"
+        )
+    }
 
     if not args.dry_run:
-        shutil.rmtree(RAW, ignore_errors=True)
-        RAW.mkdir(parents=True)
+        shutil.rmtree(raw, ignore_errors=True)
+        raw.mkdir(parents=True)
     checks: list[dict] = []
     segments: list[dict] = []
     try:
@@ -389,11 +450,14 @@ def main() -> int:
             for scene in scenes:
                 attempts = 1 if args.dry_run else video["retries"]
                 for attempt in range(1, attempts + 1):
-                    context = make_context(browser, size, None if args.dry_run else RAW)
+                    context = make_context(
+                        browser, size, None if args.dry_run else raw, video.get("zoom", 1)
+                    )
                     page = context.new_page()
                     director = Director(page, video)
                     try:
-                        start = run_scene(page, director, scene, cfg, checks, admin_key)
+                        key = admin_keys.get(scene.get("tenant", default_tenant), "")
+                        start = run_scene(page, director, scene, cfg, checks, key)
                         end = director.mark()
                         context.close()
                         path = page.video.path() if page.video else None
@@ -403,9 +467,9 @@ def main() -> int:
                         print(f"  {scene['id']}: ok ({end - start:.1f} s)", flush=True)
                         break
                     except SceneFailed as exc:
-                        OUT.mkdir(exist_ok=True)
+                        out.mkdir(parents=True, exist_ok=True)
                         with contextlib.suppress(PlaywrightError):  # how the page looked
-                            page.screenshot(path=str(OUT / f"failed-{scene['id']}.png"))
+                            page.screenshot(path=str(out / f"failed-{scene['id']}.png"))
                         context.close()
                         if page.video:
                             Path(page.video.path()).unlink(missing_ok=True)
@@ -418,11 +482,15 @@ def main() -> int:
                             return 1
             browser.close()
     finally:
-        if admin_key:
-            revoke_admin_key(args.api, admin_key)
+        for key in admin_keys.values():
+            revoke_admin_key(args.api, key)
 
     if args.dry_run:
         failed = [c for c in checks if c["problems"]]
+        print("\nReplies:")
+        for c in checks:
+            mark = "FAIL" if c["problems"] else "ok  "
+            print(f"  {mark} {c['scene']:<12} [{c['language'] or '-'}] {c['reply'][:110]!r}")
         print(
             f"\nDry run: {len(checks) - len(failed)}/{len(checks)} replies matched their keywords."
         )
@@ -432,23 +500,27 @@ def main() -> int:
             )
         return 1 if failed else 0
 
-    (OUT / "segments.json").write_text(json.dumps(segments, indent=2))
+    (out / "segments.json").write_text(json.dumps(segments, indent=2))
     total = 0.0
     print("\nScene durations:")
     for s in segments:
         length = s["end"] - s["start"]
         total += length
-        print(f"  {s['id']:<10} {length:5.1f} s")
-    print(f"  {'total':<10} {total:5.1f} s (target 60-90 s)")
-    print("Next: ./demo/build_video.sh")
+        print(f"  {s['id']:<14} {length:5.1f} s")
+    print(f"  {'total':<14} {total:5.1f} s")
+    print(f"Next: ./demo/build_video.sh --out {args.out}")
     return 0
 
 
-def make_context(browser, size: dict, video_dir: Path | None) -> BrowserContext:
-    options = {"viewport": size, "device_scale_factor": 1}
+def make_context(browser, size: dict, video_dir: Path | None, zoom: float = 1) -> BrowserContext:
+    """zoom > 1 renders a smaller viewport at a higher pixel density into the same video size,
+    so the chat text is readable on a phone (overlays keep their size)."""
+    viewport = {"width": round(size["width"] / zoom), "height": round(size["height"] / zoom)}
+    options = {"viewport": viewport, "device_scale_factor": zoom}
     if video_dir:
         options.update(record_video_dir=str(video_dir), record_video_size=size)
     context = browser.new_context(**options)
+    context.add_init_script(f"window.__demoZoom = {zoom};")
     context.add_init_script(OVERLAY_JS)
     return context
 

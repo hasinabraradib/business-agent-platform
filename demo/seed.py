@@ -52,6 +52,8 @@ SLUG = "saffron-sage"
 NAME = "Saffron & Sage Bistro"
 SITE_ORIGIN = os.environ.get("DEMO_SITE_ORIGIN", "http://localhost:8095")
 WIDGET_KEY_LABEL = "Demo video site"
+# Tenants a recording may wipe the activity of: only the fictional demo businesses.
+DEMO_TENANTS_FOR_RESET = {SLUG, "demo-restaurant", "demo-shop"}
 DOCUMENTS = {
     "menu.md": "Saffron & Sage menu",
     "faq.md": "Saffron & Sage FAQ: hours, parking, events, allergies",
@@ -163,26 +165,29 @@ async def rotate_widget_key(tenant_id) -> str:
     return created.full_key
 
 
-async def reset_activity() -> int:
-    """Delete the demo tenant's conversations, bookings and leads (never its documents, settings
-    or keys), so a recording shows only what it creates."""
+async def reset_activity(slug: str = SLUG) -> int:
+    """Delete a demo tenant's conversations, bookings and leads (never its documents, orders,
+    settings or keys), so a recording shows only what it creates."""
     async with owner_session() as session:
-        tenant_id = await session.scalar(select(Tenant.id).where(Tenant.slug == SLUG))
+        tenant_id = await session.scalar(select(Tenant.id).where(Tenant.slug == slug))
         if tenant_id is None:
-            print(f"{SLUG}: no such tenant; run demo/seed.py first")
+            print(f"{slug}: no such tenant; seed it first")
             return 1
         counts = {}
         for model in (Reservation, Lead, PendingAction, Conversation):  # messages cascade
             result = await session.execute(delete(model).where(model.tenant_id == tenant_id))
             counts[model.__tablename__] = result.rowcount
         await session.commit()
-    print(f"{SLUG}: activity reset ({', '.join(f'{n} {t}' for t, n in counts.items())})")
+    print(f"{slug}: activity reset ({', '.join(f'{n} {t}' for t, n in counts.items())})")
     return 0
 
 
 async def main(args: argparse.Namespace) -> int:
     if args.reset_activity:
-        return await reset_activity()
+        if args.tenant not in DEMO_TENANTS_FOR_RESET:
+            print(f"refusing to reset {args.tenant!r}: only demo tenants")
+            return 1
+        return await reset_activity(args.tenant)
     tenant_id, admin_key = await ensure_tenant()
     if admin_key:
         print(f"  admin_key (shown once; for the dashboard): {admin_key}")
@@ -209,4 +214,5 @@ if __name__ == "__main__":
         action="store_true",
         help="only delete the tenant's conversations, bookings and leads (before a recording)",
     )
+    parser.add_argument("--tenant", default=SLUG, help="with --reset-activity: which demo tenant")
     sys.exit(asyncio.run(main(parser.parse_args())))
